@@ -1,0 +1,126 @@
+{
+  // VS Code Task Configuration – Shell Script Auto‐Fix & Lint + Run
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Add Shebang (if missing)",
+      "type": "process", // Correctly set to process
+      // Execute bash directly
+      "command": "/bin/bash",
+      "args": [
+        "-c", // Tell bash to execute the following string
+        // The command string for bash, with single quotes for sed pattern and double for file
+        "if ! grep -q '^#!' \"${file}\"; then sed -i '' '1i\\#!/usr/bin/env zsh' \"${file}\"; fi"
+      ],
+      "presentation": { "echo": true, "reveal": "never", "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Fix `endif` → `fi`",
+      "type": "process", // Correctly set to process
+       // Execute sed directly
+      "command": "/usr/bin/sed", // Use absolute path for sed
+      "args": [
+        "-i", "''",
+        "s/\\<endif\\>/fi/g",
+        "${file}"
+      ],
+      "presentation": { "reveal": "never" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Insert missing `then`",
+      "type": "process", // Correctly set to process
+       // Execute bash directly
+      "command": "/bin/bash",
+      "args": [
+        "-c", // Tell bash to execute the following string
+        // Command string for bash/sed
+        "sed -i '' -E 's/^(\\s*if[^;]*)(;?)$/\\1 then\\2/' \"${file}\""
+      ],
+      "presentation": { "reveal": "never" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Un-brace stray `else`",
+      "type": "process", // Correctly set to process
+       // Execute sed directly
+      "command": "/usr/bin/sed", // Use absolute path for sed
+      "args": [
+         "-i", "''",
+        // Using single quotes for sed pattern to protect backslashes
+        "s/^\\s*}\\s*else\\s*{\\s*$/else/",
+        "${file}"
+      ],
+      "presentation": { "reveal": "never" },
+      "problemMatcher": []
+    },
+    {
+      "label": "ShellCheck Script",
+      // Keep as shell or change to process, either works now the core issue is ShellCheck binary itself
+      "type": "shell",
+      // Use absolute path confirmed by `which shellcheck`
+      "command": "/opt/homebrew/bin/shellcheck", // Adjust path if needed
+      "args": [
+        "-s", "bash", // <<< CHANGE THIS FROM "zsh" TO "bash"
+        "-f", "gcc",
+        "${file}"
+      ],
+      "group": { "kind": "test", "isDefault": false },
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": {
+        "owner": "shellcheck",
+        "fileLocation": ["absolute"],
+        "pattern": {
+          "regexp": "^(.*):(\\d+):(\\d+): (.+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "message": 4
+        }
+      }
+    },
+    {
+      "label": "Auto-fix & Lint Shell Script",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        // Label is correct
+        "Add Shebang (if missing)",
+        "Fix `endif` → `fi`",
+        "Insert missing `then`",
+        "Un-brace stray `else`",
+        "ShellCheck Script"
+      ],
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Validate tasks.json",
+      "type": "shell", // Can remain shell type
+      "command": "jq",
+      "args": ["empty", "${workspaceFolder}/.vscode/tasks.json"],
+      "presentation": { "reveal": "never" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Format tasks.json",
+      "type": "shell", // Can remain shell type
+      "command": "npx",
+      "args": ["prettier", "--write", "${workspaceFolder}/.vscode/tasks.json"],
+      "presentation": { "reveal": "never" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run nextLevel3.sh",
+      "type": "process", // Correctly set to process
+      // Execute bash directly
+      "command": "/bin/bash",
+      "args": [
+        "-c", // Tell bash to execute the following string
+        "/bin/bash \"${workspaceFolder}/Tools/nextLevel3.sh\" --verbose" // Command string
+      ],
+      "presentation": { "echo": true, "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    }
+  ]
+}

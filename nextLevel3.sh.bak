@@ -1,0 +1,457 @@
+#!/usr/bin/env zsh
+###############################################################################
+# nextLevel.sh v2.3 – One-shot “genius-level” setup for M2 Pro Mac
+# Combined Pi-hole + Cloudflared DoH + Automated Checks
+###############################################################################
+set -eEuo pipefail
+trap 'on_error $LINENO $?' ERR
+
+########################## Argument Parsing ###################################
+DRYRUN=false; VERBOSE=false; FAIL_FAST=false
+while (( $# )); do
+  case $1 in
+    -n|--dry-run)   DRYRUN=true ;;
+    -v|--verbose)   VERBOSE=true ;;
+    --fail-fast)    FAIL_FAST=true ;;
+    -h|--help)      echo "Usage: $0 [-n|--dry-run] [-v|--verbose] [--fail-fast]"; exit 0 ;;
+    --)             shift; break ;; # Stop processing options
+    -*)             echo "Error: Unknown option: $1" >&2; exit 1 ;;
+    *) break ;;
+  esac
+  shift
+done
+
+########################## Logging & Dry-Run ##################################
+LOGDIR="$HOME/Library/Logs/nextLevel"
+if ! $DRYRUN; then
+  mkdir -p "$LOGDIR"
+fi
+LOGFILE="$LOGDIR/$(date +%F_%H-%M-%S).log"
+if ! $DRYRUN; then
+  exec > >(tee -a "$LOGFILE") 2>&1
+fi
+
+RESET=$'\033[0m'
+log() {
+  local lvl=$1; shift
+  local color
+  case "$lvl" in
+    INFO)  color=$'\033[0;34m' ;;  # Blue
+    WARN)  color=$'\033[0;33m' ;;  # Yellow
+    ERROR) color=$'\033[0;31m' ;;  # Red
+    DRYRUN)color=$'\033[0;36m' ;;  # Cyan
+    *)     color=$RESET ;;
+  esac
+  echo "${color}[$(date +'%Y-%m-%dT%H:%M:%S')] [$lvl] $*${RESET}" >&2
+}
+
+on_error() {
+  local ln=$1 code=$2
+  log ERROR "Command failed on line $ln with exit code $code"
+  $FAIL_FAST && exit $code
+}
+
+run_cmd() {
+  local cmd="$*"
+  if $DRYRUN; then
+    log DRYRUN "$cmd"; return 0
+  fi
+  $VERBOSE && log INFO "→ $cmd"
+  eval "$cmd"
+  # Note: Relying on set -e and the trap for errors from eval "$cmd"
+  # The trap handler's line number might point to the start of the trap itself (line 8)
+  # or the line where the command was called (depending on zsh version/options),
+  # not necessarily the specific line inside the eval'd string that failed.
+  # The launchctl errors seen previously printed their message to stderr *before*
+  # the trap fired, providing the specific command failure details.
+}
+
+run_cmd_check() {
+  if $DRYRUN; then
+    log DRYRUN "(check) $*"; return 0
+  fi
+  ( eval "$*" ) # Execute in a subshell to not affect script state on failure
+}
+
+########################## Config File ########################################
+log INFO "Loading configuration…"
+CONFIG="$HOME/.nextlevel.json"
+if [[ -f $CONFIG ]]; then
+  command -v jq &>/dev/null || run_cmd "brew install jq"
+  # Use jq to read boolean values, default to true if key missing or jq fails
+  INSTALL_PKGS=$(run_cmd_check "jq -r 'try .install.packages catch true' $CONFIG")
+  INSTALL_CASKS=$(run_cmd_check "jq -r 'try .install.casks    catch true' $CONFIG")
+  INSTALL_OLLAMA=$(run_cmd_check "jq -r 'try .install.ollama  catch true' $CONFIG")
+  INSTALL_PIHOLE=$(run_cmd_check "jq -r 'try .install.pihole  catch true' $CONFIG")
+  INSTALL_DOH=$(run_cmd_check "jq -r 'try .install.doh    catch true' $CONFIG")
+  ENABLE_YUBI=$(run_cmd_check "jq -r 'try .install.yubikey catch true' $CONFIG")
+  ENABLE_NORD=$(run_cmd_check "jq -r 'try .install.nordvpn catch true' $CONFIG")
+
+  # Ensure variables are actual zsh booleans/strings based on jq output
+  # jq output is string "true" or "false" if successful, "true" if catch true triggered
+  for var_name in INSTALL_PKGS INSTALL_CASKS INSTALL_OLLAMA INSTALL_PIHOLE INSTALL_DOH ENABLE_YUBI ENABLE_NORD; do
+    if [[ "$(eval echo \$$var_name)" != "true" ]]; then
+        eval "$var_name=false"
+    else
+        eval "$var_name=true" # Ensure it's the string "true"
+    fi
+  done
+
+  log INFO "Config loaded: pkgs=$INSTALL_PKGS, casks=$INSTALL_CASKS, ollama=$INSTALL_OLLAMA, pihole=$INSTALL_PIHOLE, doh=$INSTALL_DOH, yubikey=$ENABLE_YUBI, nordvpn=$ENABLE_NORD"
+else
+  log INFO "No config file '$CONFIG' found. Using defaults (all enabled)."
+  INSTALL_PKGS=true; INSTALL_CASKS=true; INSTALL_OLLAMA=true
+  INSTALL_PIHOLE=true; INSTALL_DOH=true; ENABLE_YUBI=true; ENABLE_NORD=true
+fi
+
+########################## 0. Prereqs #########################################
+log INFO "Checking Xcode CLT…"
+if ! xcode-select -p &>/dev/null; then
+  run_cmd "xcode-select --install"; log INFO "Re-run after install"; exit 1
+fi
+
+log INFO "Bootstrapping ARM Homebrew…"
+if [[ ! -d /opt/homebrew ]]; then
+  run_cmd 'arch -arm64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+  # Add brew shellenv to zprofile for future sessions, use $(which brew) for robustness
+  run_cmd "echo 'eval \"\$($(which brew) shellenv)\"' >> ~/.zprofile"
+fi
+# Evaluate brew shellenv in the current script for immediate use
+eval "$(/opt/homebrew/bin/brew shellenv)"
+log INFO "Homebrew is ready."
+
+########################## 1. Install formulae & casks #######################
+if $INSTALL_PKGS; then
+  log INFO "Installing formulae…"
+  run_cmd "brew update"
+  # Added jq to the install list
+  run_cmd "brew install mise colima docker docker-buildx docker-compose cloudflared jq"
+fi
+if $INSTALL_CASKS; then
+  log INFO "Installing casks…"
+  # Added nordvpn cask
+  run_cmd "brew install --cask volta macs-fan-control raycast warp rectangle-pro betterdisplay hummingbird yubico-yubikey-manager yubico-authenticator knockknock blockblock nordvpn"
+fi
+
+########################## 2. Developer setup #################################
+log INFO "Configuring mise & toolchain…"
+# Ensure mise activate line uses eval and is added if missing
+run_cmd "grep -q 'mise activate' ~/.zshrc || echo 'eval \"\$(mise activate zsh)\"' >> ~/.zshrc"
+# Activate mise in the current script session if not dry running, for immediate use
+if ! $DRYRUN; then
+  log INFO "Activating mise in current script session…"
+  eval "$(mise activate zsh)" || log WARN "mise activation failed in script."
+fi
+run_cmd "mise use -g node@lts python@3.12 rust@stable go@1.22"
+log INFO "Starting Colima (vz backend)…"
+run_cmd "colima start --arch aarch64 --vm-type vz --vz-rosetta || true"
+
+########################## 3. Power & fan profiles ###########################
+log INFO "Adding low-power aliases…"
+# These appends are fine using run_cmd as they just add lines to a file
+run_cmd "grep -q lpm-on ~/.zshrc || echo 'alias lpm-on=\"sudo powermetrics -q --lowpowermode on\"' >> ~/.zshrc"
+run_cmd "grep -q lpm-off ~/.zshrc || echo 'alias lpm-off=\"sudo powermetrics -q --lowpowermode off\"' >> ~/.zshrc"
+
+########################## 4. Security ########################################
+log INFO "Enabling stealth firewall & TouchID sudo…"
+run_cmd "sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on"
+# Use echo -e for explicit tab, use grep -qF for fixed string search
+run_cmd "grep -qF 'auth\tsufficient\tpam_tid.so' /etc/pam.d/sudo || echo -e 'auth\\tsufficient\\tpam_tid.so' | sudo tee -a /etc/pam.d/sudo >/dev/null"
+
+if $ENABLE_YUBI; then
+  log INFO "Attempting YubiKey SSH keygen…"
+  # Wrapped ssh-keygen in run_cmd
+  if run_cmd "ssh-keygen -t ed25519-sk -f ~/.ssh/id_ed25519_sk -N \"\" -O resident -O application=ssh:$(whoami)@$(hostname) 2>/dev/null"; then
+    log INFO "✓ YubiKey SSH key created"
+  else
+    log WARN "No FIDO2 key detected or ssh-keygen failed; skipping keygen"
+  fi
+fi
+
+########################## 5. LaunchAgents ####################################
+log INFO "Installing LaunchAgents & scripts…"
+# Wrapped mkdir in run_cmd
+run_cmd "mkdir -p ~/Library/LaunchAgents ~/Scripts ~/AuditLogs"
+
+# Battery alert script
+if ! $DRYRUN; then
+cat > ~/Scripts/battAlert.sh <<'EOF'
+#!/usr/bin/env zsh
+pct=$(pmset -g batt | awk '/Internal/ {gsub(/;/,""); print $3}')
+(( pct > 85 )) && osascript -e 'display notification "Unplug to preserve battery health" with title "Battery"'
+EOF
+fi
+run_cmd "chmod +x ~/Scripts/battAlert.sh"
+
+# Battery alert agent plist (Corrected XML: no non-breaking space, </dict> on new line)
+if ! $DRYRUN; then
+cat > ~/Library/LaunchAgents/com.local.battalert.plist <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.local.battalert</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$HOME/Scripts/battAlert.sh</string>
+  </array>
+  <key>StartInterval</key><integer>1800</integer>
+  <key>RunAtLoad</key><true/>
+</dict>
+</plist>
+EOF
+fi
+# Use the launchctl bootout/bootstrap/enable sequence as it worked
+run_cmd "launchctl bootout gui/\$(id -u) ~/Library/LaunchAgents/com.local.battalert.plist 2>/dev/null || true"
+run_cmd "launchctl bootstrap gui/\$(id -u) ~/Library/LaunchAgents/com.local.battalert.plist"
+run_cmd "launchctl enable gui/\$(id -u)/com.local.battalert"
+
+
+# Weekly audit script
+if ! $DRYRUN; then
+cat > ~/Scripts/weeklyAudit.sh <<'EOF'
+#!/usr/bin/env zsh
+# Note: macDeepDive.sh must be in ~/Tools/ and executable
+if [[ -x "$HOME/Tools/macDeepDive.sh" ]]; then
+  "$HOME/Tools/macDeepDive.sh" > "$HOME/AuditLogs/$(date +%F_%H-%M).txt"
+else
+  echo "Error: macDeepDive.sh not found or not executable!" >&2
+  exit 1
+fi
+
+cd "$HOME/AuditLogs" || { echo "Error: Could not change to audit log directory!" >&2; exit 1; }
+
+[[ ! -d .git ]] && git init
+# Use --allow-empty-message and --no-verify for robustness in automation, or just || true
+git add .; git commit -m "audit $(date +%F)" || true
+EOF
+fi
+run_cmd "chmod +x ~/Scripts/weeklyAudit.sh"
+
+# Weekly audit agent plist (Corrected XML: no non-breaking space)
+if ! $DRYRUN; then
+cat > ~/Library/LaunchAgents/com.local.weeklyaudit.plist <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.w3.org/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.local.weeklyaudit</string>
+  <key>ProgramArguments</key><array><string>$HOME/Scripts/weeklyAudit.sh</string></array>
+  <key>StartCalendarInterval</key>
+  <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer></dict>
+  <key>RunAtLoad</key><true/>
+</dict>
+</plist>
+EOF
+fi
+# Use the launchctl bootout/bootstrap/enable sequence as it worked
+run_cmd "launchctl bootout gui/\$(id -u) ~/Library/LaunchAgents/com.local.weeklyaudit.plist 2>/dev/null || true"
+run_cmd "launchctl bootstrap gui/\$(id -u) ~/Library/LaunchAgents/com.local.weeklyaudit.plist"
+run_cmd "launchctl enable gui/\$(id -u)/com.local.weeklyaudit"
+
+
+########################## 6. Local AI lab #####################################
+if $INSTALL_OLLAMA; then
+  log INFO "Installing Ollama…"; run_cmd "brew install ollama"
+  run_cmd "brew services start ollama || true"; run_cmd "sleep 5" # Wrapped sleep in run_cmd
+  log INFO "Pulling Mistral model…"; run_cmd "ollama pull mistral:7b || true"
+fi
+
+########################## 7. Advanced Networking (Combined Pi-hole + DoH) ####
+
+# Make sure we have sudo rights upfront (caches your password)
+log INFO "Checking for sudo access…"
+# Check if passwordless sudo is configured before running sudo -v,
+# to avoid unnecessary password prompt if already configured.
+if ! sudo -n true 2>/dev/null; then
+    sudo -v # This will prompt for password if needed and cache it
+fi
+
+
+# Create a sudoers file to allow passwordless `networksetup -setdnsservers`
+SUDOERS_FILE="/etc/sudoers.d/nextlevel-network"
+# Use grep -qF for robustness against file existence and content check
+if ! sudo grep -qF "$USER ALL=(root) NOPASSWD: /usr/sbin/networksetup -setdnsservers *" "$SUDOERS_FILE" 2>/dev/null; then
+  log INFO "Configuring passwordless sudo for networksetup…"
+  # Ensure the directory exists and has correct permissions for sudoers includes
+  sudo mkdir -p /etc/sudoers.d
+  sudo chmod 0755 /etc/sudoers.d
+  # Write the sudoers rule
+  cat <<EOF_SUDO | sudo tee "$SUDOERS_FILE" >/dev/null
+# Allow user '$USER' to run networksetup -setdnsservers without password
+$USER ALL=(root) NOPASSWD: /usr/sbin/networksetup -setdnsservers *
+EOF_SUDO
+  # Set correct permissions for the sudoers include file
+  sudo chmod 440 "$SUDOERS_FILE"
+  log INFO "✓ Passwordless sudo configured for networksetup."
+else
+  log INFO "→ Passwordless sudo for networksetup already configured."
+fi
+
+log INFO "Identifying primary network service…"
+# Use networksetup -listallnetworkservices and get the first service name listed after the header
+PRIMARY_SERVICE=$(networksetup -listallnetworkservices | tail -n +2 | head -n 1)
+if [[ -z "$PRIMARY_SERVICE" ]]; then
+  log ERROR "Cannot detect network service; skipping Advanced Networking setup"; INSTALL_PIHOLE=false; INSTALL_DOH=false
+else
+  log INFO "Primary network service: $PRIMARY_SERVICE"
+fi
+
+# --- Get the Colima VM's IP address early ---
+VM_IP=$(run_cmd_check "colima status --json | jq -r '.ip_address'")
+
+# Check if VM_IP was obtained successfully. If not, disable PIHOLE and DOH installation.
+if [[ -z "$VM_IP" || "$VM_IP" == "null" ]]; then
+    log ERROR "Could not get Colima VM IP address. Skipping Pi-hole & DoH deployment."
+    INSTALL_PIHOLE=false # Skip both if VM IP is not available
+    INSTALL_DOH=false
+else
+    log INFO "Colima VM IP address: $VM_IP"
+    # Add a small sleep to ensure Colima networking is fully stable
+    run_cmd "sleep 3"
+fi
+
+
+# --- Combined Cloudflared DoH + Pi-hole rollout ---
+  if $INSTALL_DOH; then
+    log INFO "Configuring DNS-over-HTTPS (Cloudflared)…"
+    if ! $DRYRUN; then
+      cat > ~/Library/LaunchAgents/com.local.doh.plist <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.local.doh</string>
+  <key>ProgramArguments</key>
+    <array>
+      <string>$(which cloudflared)</string>
+      <string>proxy-dns</string>
+      <string>--address</string><string>${VM_IP}</string>
+      <string>--port</string><string>5053</string>
+      <string>--upstream</string><string>https://1.1.1.1/dns-query</string>
+    </array>
+  <key>KeepAlive</key><true/>
+  <key>RunAtLoad</key><true/>
+</dict>
+</plist>
+EOF
+    fi
+    run_cmd "launchctl unload -w ~/Library/LaunchAgents/com.local.doh.plist 2>/dev/null || true"
+    run_cmd "launchctl load   -w ~/Library/LaunchAgents/com.local.doh.plist"
+    log INFO "✓ Cloudflared DoH proxy loaded on ${VM_IP}:5053"
+  fi
+
+  if $INSTALL_PIHOLE; then
+    log INFO "Deploying Pi-hole container…"
+    run_cmd "docker rm -f pihole 2>/dev/null || true"
+    run_cmd "docker run -d --name pihole \
+      -p ${VM_IP}:53:53/tcp -p ${VM_IP}:53:53/udp \
+      -p 127.0.0.1:80:80 \
+      --restart unless-stopped \
+      -v pihole_data:/etc/pihole \
+      -e TZ=$(date +%Z) \
+      -e WEBPASSWORD=\"set_me\" \
+      -e DNS1=${VM_IP}#5053 \
+      pihole/pihole:latest"
+    log INFO "✓ Pi-hole bound to ${VM_IP}:53 and preconfigured to use DoH"
+
+    log INFO "Switching macOS DNS for '$PRIMARY_SERVICE' to Pi-hole at $VM_IP"
+    run_cmd "sudo networksetup -setdnsservers \"$PRIMARY_SERVICE\" $VM_IP"
+    run_cmd "dscacheutil -flushcache && sudo killall -HUP mDNSResponder 2>/dev/null || true"
+    log INFO "✓ macOS DNS set to Pi-hole ($VM_IP) and caches flushed"
+  fi
+
+
+########################## 8. NordVPN GUI ######################################
+if $ENABLE_NORD; then
+  log INFO "Launching NordVPN GUI…"; run_cmd "open -a NordVPN || true"
+fi
+
+########################## 9. Prune Logitech ###################################
+log INFO "Pruning Logitech launch agents…"
+# These setopt/unsetopt must run directly in the script's shell
+setopt nullglob
+files=(/Library/LaunchAgents/com.logi.*)
+if (( ${#files} )); then
+  log INFO "Found Logitech agents: ${files[*]}"
+  for p in "${files[@]}"; do
+    run_cmd "sudo launchctl bootout system \"$p\" || true"
+    run_cmd "sudo rm -f \"$p\""
+  done
+  log INFO "✓ Logitech agents removed"
+else
+  log INFO "→ No Logitech agents found"
+fi
+unsetopt nullglob
+
+########################## 10. Final Checklist ################################
+log INFO "Running final health checks…"
+
+# Check 1: ARM-only process
+if [[ $(sysctl -n sysctl.proc_translated) -eq 0 ]]; then
+  CHECK_ARM="✅ ARM-only process"
+else
+  CHECK_ARM="❌ Rosetta active in this process"
+fi
+
+# Check 2: Ollama running (accessible via localhost:11434)
+if run_cmd_check 'curl -s --max-time 5 http://localhost:11434/v1/models &>/dev/null | grep -q mistral'; then
+  CHECK_OLLAMA="✅ Ollama running (Mistral found)"
+else
+  CHECK_OLLAMA="❌ Ollama down or no Mistral model found"
+fi
+
+# Check 3: Local DNS filtering configured (pointing to 127.0.0.1 or VM_IP)
+# Need to handle case where VM_IP wasn't set if Pihole/DOH was skipped
+DNS_CHECK_PATTERN="127\.0\.0\.1(:\d+)?" # Always check for localhost/doh
+# $VM_IP is available here because it's defined earlier in Section 7 outside the if blocks
+if [[ -n "$VM_IP" && "$VM_IP" != "null" ]]; then
+    DNS_CHECK_PATTERN+="|${VM_IP}" # Add VM_IP to pattern if available
+fi
+
+if scutil --dns | grep nameserver | grep -E "$DNS_CHECK_PATTERN" &>/dev/null; then
+  CHECK_DNS="✅ Local DNS filter set (matching $DNS_CHECK_PATTERN)"
+else
+  CHECK_DNS="❌ DNS not pointing to local filter (matching $DNS_CHECK_PATTERN)"
+fi
+
+# Check 4: LaunchAgents loaded (check by listing label)
+if run_cmd_check 'launchctl list com.local.battalert &>/dev/null'; then
+  CHECK_BATTERY="✅ battAlert Agent loaded"
+else
+  CHECK_BATTERY="❌ battAlert Agent missing"
+fi
+
+if run_cmd_check 'launchctl list com.local.weeklyaudit &>/dev/null'; then
+  CHECK_WEEKLY="✅ weeklyAudit Agent loaded"
+else
+  CHECK_WEEKLY="❌ weeklyAudit Agent missing"
+fi
+
+# Check 5: DoH Agent loaded (only if installation was attempted and VM_IP was available)
+# Use explicit check because INSTALL_DOH might have been set to false in Section 7
+if [[ $INSTALL_DOH == true ]]; then
+    if run_cmd_check 'launchctl list com.local.doh &>/dev/null'; then
+      CHECK_DOH="✅ DoH Agent loaded (${VM_IP}:5053)"
+    else
+      CHECK_DOH="❌ DoH Agent missing"
+    fi
+fi
+
+
+# --- Print Final Summary ---
+log INFO "--- Health Check Summary ---"
+log INFO "$CHECK_ARM"
+log INFO "$CHECK_OLLAMA"
+log INFO "$CHECK_DNS"
+log INFO "$CHECK_BATTERY"
+log INFO "$CHECK_WEEKLY"
+# Only print DoH check result if its installation was attempted
+if [[ $INSTALL_DOH == true ]]; then
+    log INFO "$CHECK_DOH"
+fi
+log INFO "--------------------------"
+
+
+log INFO "Setup complete ✔"
