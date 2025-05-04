@@ -1,25 +1,25 @@
 {
-  // VS Code Task Configuration – Shell Script Auto‐Fix & Lint + Run
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Add Shebang (if missing)",
-      "type": "process", // Correctly set to process
-      // Execute bash directly
+      "label": "Add Shebang if missing",
+      "type": "process",
       "command": "/bin/bash",
       "args": [
-        "-c", // Tell bash to execute the following string
-        // The command string for bash, with single quotes for sed pattern and double for file
+        "-c",
         "if ! grep -q '^#!' \"${file}\"; then sed -i '' '1i\\#!/usr/bin/env zsh' \"${file}\"; fi"
       ],
-      "presentation": { "echo": true, "reveal": "never", "panel": "shared" },
+      "presentation": {
+        "echo": true,
+        "reveal": "never",
+        "panel": "shared"
+      },
       "problemMatcher": []
     },
     {
-      "label": "Fix `endif` → `fi`",
-      "type": "process", // Correctly set to process
-       // Execute sed directly
-      "command": "/usr/bin/sed", // Use absolute path for sed
+      "label": "Fix endif to fi",
+      "type": "process",
+      "command": "/usr/bin/sed",
       "args": [
         "-i", "''",
         "s/\\<endif\\>/fi/g",
@@ -29,26 +29,22 @@
       "problemMatcher": []
     },
     {
-      "label": "Insert missing `then`",
-      "type": "process", // Correctly set to process
-       // Execute bash directly
+      "label": "Insert missing then",
+      "type": "process",
       "command": "/bin/bash",
       "args": [
-        "-c", // Tell bash to execute the following string
-        // Command string for bash/sed
+        "-c",
         "sed -i '' -E 's/^(\\s*if[^;]*)(;?)$/\\1 then\\2/' \"${file}\""
       ],
       "presentation": { "reveal": "never" },
       "problemMatcher": []
     },
     {
-      "label": "Un-brace stray `else`",
-      "type": "process", // Correctly set to process
-       // Execute sed directly
-      "command": "/usr/bin/sed", // Use absolute path for sed
+      "label": "Un-brace stray else",
+      "type": "process",
+      "command": "/usr/bin/sed",
       "args": [
-         "-i", "''",
-        // Using single quotes for sed pattern to protect backslashes
+        "-i", "''",
         "s/^\\s*}\\s*else\\s*{\\s*$/else/",
         "${file}"
       ],
@@ -56,13 +52,11 @@
       "problemMatcher": []
     },
     {
-      "label": "ShellCheck Script",
-      // Keep as shell or change to process, either works now the core issue is ShellCheck binary itself
+      "label": "ShellCheck script",
       "type": "shell",
-      // Use absolute path confirmed by `which shellcheck`
-      "command": "/opt/homebrew/bin/shellcheck", // Adjust path if needed
+      "command": "/opt/homebrew/bin/shellcheck",
       "args": [
-        "-s", "bash", // <<< CHANGE THIS FROM "zsh" TO "bash"
+        "-s", "bash",
         "-f", "gcc",
         "${file}"
       ],
@@ -84,19 +78,18 @@
       "label": "Auto-fix & Lint Shell Script",
       "dependsOrder": "sequence",
       "dependsOn": [
-        // Label is correct
-        "Add Shebang (if missing)",
-        "Fix `endif` → `fi`",
-        "Insert missing `then`",
-        "Un-brace stray `else`",
-        "ShellCheck Script"
+        "Add Shebang if missing",
+        "Fix endif to fi",
+        "Insert missing then",
+        "Un-brace stray else",
+        "ShellCheck script"
       ],
       "group": { "kind": "build", "isDefault": true },
       "problemMatcher": []
     },
     {
       "label": "Validate tasks.json",
-      "type": "shell", // Can remain shell type
+      "type": "shell",
       "command": "jq",
       "args": ["empty", "${workspaceFolder}/.vscode/tasks.json"],
       "presentation": { "reveal": "never" },
@@ -104,7 +97,7 @@
     },
     {
       "label": "Format tasks.json",
-      "type": "shell", // Can remain shell type
+      "type": "shell",
       "command": "npx",
       "args": ["prettier", "--write", "${workspaceFolder}/.vscode/tasks.json"],
       "presentation": { "reveal": "never" },
@@ -112,15 +105,19 @@
     },
     {
       "label": "Run nextLevel3.sh",
-      "type": "process", // Correctly set to process
-      // Execute bash directly
+      "type": "process",
       "command": "/bin/bash",
       "args": [
-        "-c", // Tell bash to execute the following string
-        "/bin/bash \"${workspaceFolder}/Tools/nextLevel3.sh\" --verbose" // Command string
+        "-c",
+        "/bin/bash \"${workspaceFolder}/nextLevel3.sh\" --verbose"
       ],
-      "presentation": { "echo": true, "reveal": "always", "panel": "dedicated" },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "dedicated"
+      },
       "problemMatcher": []
     }
   ]
 }
+// This tasks.json file is designed to automate the process of linting and formatting shell scripts.
