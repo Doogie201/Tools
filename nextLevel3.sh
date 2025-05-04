@@ -274,72 +274,83 @@ diag_ollama() {
     log INFO "-------------------------"
 }
 
-# --- Modified on_error trap handler (Corrected to allow diagnostics to fail) ---
+# --- Modified on_error trap handler ---
 on_error() {
-  local line=$1 original_code=$2 # Capture original error code
-  log ERROR "Script failed in section '$CURRENT_SECTION' on line $line with exit code $original_code"
+  local line=$1 code=$2
+  log ERROR "Script failed in section '$CURRENT_SECTION' on line $line with exit code $code"
   log INFO "Initiating diagnostics for section '$CURRENT_SECTION'…"
 
-  # Run general diagnostics (allow failure inside trap using || true)
+  # run_diagnostic general diagnostics (always useful)
   log INFO "--- General System Info ---"
-  if command -v df >/dev/null; then run_diagnostic "df -h" || true; else log WARN "df not found." || true; fi || true # Allow df to fail gracefully
-  if command -v top >/dev/null; then run_diagnostic "top -l 1 | head -n 10" || true; else log WARN "top not found." || true; fi || true # Allow top to fail gracefully (fixes 141 issue)
-  if command -v log >/dev/null && check "sudo -n true 2>/dev/null"; then run_diagnostic "sudo log show --last 5m --info --debug --predicate 'process == \"launchd\" || process == \"kernel\"' " || true; else log WARN "log command or sudo not available for full logs." || true; fi || true # Allow log show to fail gracefully
-  log INFO "---------------------------" || true # Ensure this log doesn't somehow cause issues
+  if command -v df >/dev/null; then run_diagnostic "df -h"; else log WARN "df not found."; fi # Check disk space
+  if command -v top >/dev/null; then run_diagnostic "top -l 1 | head -n 10"; else log WARN "top not found."; fi # Check process list/load
+  # Only run_diagnostic system logs if 'log' command exists AND sudo works (as many useful logs are root-owned)
+  if command -v log >/dev/null && check "sudo -n true 2>/dev/null"; then run_diagnostic "sudo log show --last 5m --info --debug --predicate 'process == \"launchd\" || process == \"kernel\"' "; else log WARN "log command or sudo not available for full logs."; fi
+  log INFO "---------------------------"
 
-  # Run section-specific diagnostics based on CURRENT_SECTION (allow failure inside trap using || true)
+
+  # run_diagnostic section-specific diagnostics based on CURRENT_SECTION
   case "$CURRENT_SECTION" in
-    "Brew Install") diag_brew || true ;; # Allow diag_brew to fail
-    "LaunchAgents") diag_launchagents || true ;; # Allow diag_launchagents to fail
-    "Advanced Networking") diag_docker_networking || true ;; # Allow diag_docker_networking to fail
-    "Ollama Setup") diag_ollama || true ;; # Allow diag_ollama to fail
+    "Brew Install") diag_brew ;;
+    "LaunchAgents") diag_launchagents ;;
+    "Advanced Networking") diag_docker_networking ;;
+    "Ollama Setup") diag_ollama ;;
     "Dev Toolchain")
-        log INFO "--- Diagnosing Dev Toolchain (Mise) ---" || true
+        log INFO "--- Diagnosing Dev Toolchain (Mise) ---"
         if command -v mise >/dev/null; then
-            run_diagnostic "mise --version" || true
-            run_diagnostic "mise ls -g" || true
-            run_diagnostic "mise doctor" || true
+            run_diagnostic "mise --version"
+            run_diagnostic "mise ls -g" # List global tools
+            run_diagnostic "mise doctor"
         else
-            log WARN "mise command not found." || true
-        fi || true # Allow this whole block to fail
-        log INFO "--------------------------------------" || true
+            log WARN "mise command not found."
+        fi
+        log INFO "--------------------------------------"
         ;;
     "Security Config")
-        log INFO "--- Diagnosing Security Config ---" || true
+        log INFO "--- Diagnosing Security Config ---"
         if command -v /usr/libexec/ApplicationFirewall/socketfilterfw >/dev/null; then
-            run_diagnostic "sudo /usr/libexec/ApplicationFirewall/socketfilterfw --getstealthmode on" || true
+            run_diagnostic "sudo /usr/libexec/ApplicationFirewall/socketfilterfw --getstealthmode"
         else
-            log WARN "socketfilterfw command not found." || true
-        fi || true # Allow this whole block to fail
+            log WARN "socketfilterfw command not found."
+        fi
         if [[ -f "/etc/pam.d/sudo" ]]; then
-            log INFO "Checking /etc/pam.d/sudo for pam_tid:" || true
-            run_diagnostic "grep pam_tid /etc/pam.d/sudo" || true
+            log INFO "Checking /etc/pam.d/sudo for pam_tid:"
+            run_diagnostic "grep pam_tid /etc/pam.d/sudo"
         else
-            log WARN "/etc/pam.d/sudo not found." || true
-        fi || true # Allow this whole block to fail
-        log INFO "----------------------------------" || true
+            log WARN "/etc/pam.d/sudo not found."
+        fi
+        log INFO "----------------------------------"
         ;;
     "YubiKey")
-         log INFO "--- Diagnosing YubiKey/SSH ---" || true
+         log INFO "--- Diagnosing YubiKey/SSH ---"
          if command -v ssh-keygen >/dev/null; then
-             run_diagnostic "ssh-keygen --version" || true
-             run_diagnostic "ls -l ~/.ssh/" || true
-             run_diagnostic "ssh-add -L" || true # List loaded keys (might require touching key)
+             run_diagnostic "ssh-keygen --version"
+             run_diagnostic "ls -l ~/.ssh/"
+             run_diagnostic "ssh-add -L" # List loaded keys (might require touching key)
          else
-             log WARN "ssh-keygen command not found." || true
-         fi || true # Allow this whole block to fail
-         log INFO "----------------------------" || true
+             log WARN "ssh-keygen command not found."
+         fi
+         log INFO "----------------------------"
          ;;
 
-    * ) log INFO "No specific diagnostics for section '$CURRENT_SECTION'.";;
+    * ) log INFO "No specific diagnostics for section '$CURRENT_SECTION'.";; # Default case
   esac
 
-  log INFO "Diagnostics complete." || true # Ensure this log doesn't cause issues
+  log INFO "Diagnostics complete."
 
-  # Now, exit based on the *original* error code and FAIL_FAST flag
-  $FAIL_FAST && exit $original_code
-  # If FAIL_FAST is false, the script will continue after the trap returns.
-  # set -e should resume automatically upon trap exit unless disabled within the trap.
+  # Exit the script after diagnostics if FAIL_FAST is true
+  # If not FAIL_FAST, the script will attempt to continue
+  # unless set -e causes the next command *after* the trap returns to fail.
+  # For a setup script, continuing after an error is often undesirable unless
+  # the error is expected and handled explicitly (like || true).
+  # Reliance on set -e and trap means *most* errors will trigger the trap and stop
+  # further meaningful execution unless specific commands use || true.
+  # Note: If $FAIL_FAST is true, this `exit $code` will run. If false, the script continues.
+  # However, set -e might cause an exit on the *next* command if the trap returns.
+  # To truly continue after error when FAIL_FAST is false, you might need `set +e` at trap start
+  # and `set -e` at trap end, but this makes error handling much more complex.
+  # Let's assume the current trap logic with set -e is intended: error triggers trap, then exits *after* trap unless suppressed.
+  $FAIL_FAST && exit $code # Original line, kept as is.
 }
 
 
