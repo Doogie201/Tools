@@ -655,7 +655,7 @@ if $INSTALL_DOH; then # Use uppercase variable
     </array>
   <key>KeepAlive</key><true/>
   <key>RunAtLoad</key><true/>
-</dict></plist>
+  </dict></plist>
 EOF_PLIST
   fi # Use the more robust remove/load -w sequence
   log INFO "Loading agent com.local.doh…"
@@ -713,12 +713,12 @@ fi
 CURRENT_SECTION="Prune Logitech"
 log INFO "Pruning Logitech agents…"
 # These setopt/unsetopt must run_diagnostic directly in the script's shell
-setopt nullglob # SC2039: In zsh, 'setopt' is not available. Use 'set -o'
+set -o nullglob # SC2039: In zsh, 'setopt' is not available. Use 'set -o'
 for p in /Library/LaunchAgents/com.logi.*; do
   run_diagnostic "sudo launchctl bootout system \"$p\" || true" # Use run()
   run_diagnostic "sudo rm -f \"$p\"" # Use run()
 done
-unsetopt nullglob # SC2039: In zsh, 'unsetopt' is not available. Use 'set +o'
+set +o nullglob # SC2039: In zsh, 'unsetopt' is not available. Use 'set +o'
 
 ### === Section 11: Final Health Check === # <-- Renumbered from 10
 CURRENT_SECTION="Health Check"
