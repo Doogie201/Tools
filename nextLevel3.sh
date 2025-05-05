@@ -194,7 +194,7 @@ diag_ollama() {
                  run_diagnostic "sudo tail -n 50 \"$log_path\" || cat \"$log_path\" || echo 'Could not read log file.'"
              else
                  log WARN "Could not find Ollama service log path via brew services info."
-             endif
+             fi
         else
             log WARN "brew or brew services not found. Cannot get Ollama service info."
         endif
@@ -643,7 +643,7 @@ if check "launchctl list com.local.battalert &>/dev/null"; then
   CHECK_BATTERY="Agent com.local.battalert loaded ✔"
 else
   CHECK_BATTERY="Agent com.local.battalert missing ❌"
-fi
+endif
 
 if check "launchctl list com.local.weeklyaudit &>/dev/null"; then
   CHECK_WEEKLY="Agent com.local.weeklyaudit loaded ✔"
