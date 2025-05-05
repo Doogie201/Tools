@@ -251,7 +251,7 @@ on_error() {
   # Run general diagnostics (always useful)
   log INFO "--- General System Info ---"
   if command -v df >/dev/null; then run_diagnostic "df -h"; else log WARN "df not found."; fi                   # Check disk space
-  if command -v top >/dev/null; then run_diagnostic "top -l 1 | head -n 10"; else log WARN "top not found."; fi # Check process list/load
+  if command -v top >/dev/null; then run_diagnostic "top -l 1 | awk 'NR<=10'"; else log WARN "top not found."; fi  # Check process list/load
   # Only run system logs if 'log' command exists AND sudo works (as many useful logs are root-owned)
   if command -v log >/dev/null && check "sudo -n true 2>/dev/null"; then run_diagnostic "sudo log show --last 5m --info --debug --predicate 'process == \"launchd\" || process == \"kernel\"' "; else log WARN "log command or sudo not available for full logs."; fi
   log INFO "---------------------------"
@@ -538,7 +538,7 @@ PRIMARY_SERVICE_ID=$(
 if [[ -n "$PRIMARY_SERVICE_ID" ]]; then
   PRIMARY_SERVICE=$(
     networksetup -listnetworkserviceorder |
-      sed -n "1{h;d}; /Device: $PRIMARY_SERVICE_ID/{x;p;q}; h" |
+      sed -n "1{h;d}; /Device: $PRIMARY_SERVICE_ID/{x;p;q;}; h" |
       sed -E 's/^\([0-9]+\)\s*//'
   )
 fi
