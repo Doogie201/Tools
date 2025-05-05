@@ -18,12 +18,12 @@
       "problemMatcher": []
     },
     {
-      "label": "Fix `endif` → `fi`",
+      "label": "Fix `fi` → `fi`",
       "type": "process",
       "command": "/usr/bin/sed",
       "args": [
         "-i", "''",
-        "s/\\<endif\\>/fi/g",
+        "s/\\<fi\\>/fi/g",
         "${file}"
       ],
       "presentation": { "reveal": "never" },
@@ -104,7 +104,7 @@
       "dependsOrder": "sequence",
       "dependsOn": [
         "Add Shebang if missing",
-        "Fix `endif` → `fi`",
+        "Fix `fi` → `fi`",
         "Fix `run` → `run_cmd`",
         "Fix `check` → `run_cmd_check`",
         "Insert missing `then`",
