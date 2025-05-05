@@ -1,4 +1,5 @@
 {
+  // VS Code Task Configuration – Shell Script Auto‐Fix & Lint + Run
   "version": "2.0.0",
   "tasks": [
     {
@@ -80,7 +81,7 @@
       "type": "shell",
       "command": "/opt/homebrew/bin/shellcheck",
       "args": [
-        "-s", "zsh",
+        "-s", "bash",
         "-f", "gcc",
         "${file}"
       ],
@@ -135,7 +136,7 @@
       "command": "/bin/bash",
       "args": [
         "-c",
-        "/bin/bash \"${workspaceFolder}/nextLevel3.sh\" --verbose"
+        "\"${workspaceFolder}/nextLevel3.sh\" --verbose"
       ],
       "presentation": {
         "echo": true,
@@ -146,8 +147,3 @@
     }
   ]
 }
-// This tasks.json file is used to automate the process of linting and formatting shell scripts
-// in a VSCode workspace. It includes tasks for adding shebangs, fixing common issues,
-// running ShellCheck, and formatting the tasks.json file itself. The tasks are designed
-// to be run in sequence, and the output is presented in a dedicated panel for easy review.
-// The tasks are designed to be run in sequence, and the output is presented in a dedicated panel for easy review.
