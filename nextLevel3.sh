@@ -539,7 +539,9 @@ else
   log INFO "Default network interface: '$PRIMARY_INTERFACE'"
   # Find the Service Name associated with this interface device
   # Use grep -B1 to get the line *before* the matching Device line, which contains the service name
-  PRIMARY_SERVICE=$(networksetup -listnetworkserviceorder | grep -B1 "Device: $PRIMARY_INTERFACE)" | awk -F'[()]' '/\(/ {print $2}')
+  # Get the line *before* the Device line (which has the service name like '(1) Wi-Fi')
+  # Use head -n 1 to isolate that line, then sed to extract the name part.
+  PRIMARY_SERVICE=$(networksetup -listnetworkserviceorder | grep -B1 "Device: $PRIMARY_INTERFACE)" | head -n 1 | sed -E 's/^\([0-9]+\)[[:space:]]*(.*)/\1/')
 
   if [[ -z "$PRIMARY_SERVICE" ]]; then
     log ERROR "Could not find network service name for interface '$PRIMARY_INTERFACE'. Skipping DNS setup."
@@ -558,23 +560,51 @@ else
 fi
 
 # 3) Get Colima VM IP
-# Use direct command substitution and check result; check function suppresses errors we might want to see
-VM_IP=$(colima status --json | jq -r '.address' 2>/dev/null) # Updated key based on potential colima output variation
-if [[ -z "$VM_IP" || "$VM_IP" == "null" ]]; then
-  # Fallback attempt if '.address' doesn't exist
-  VM_IP=$(colima status --json | jq -r '.ipAddress' 2>/dev/null) # Check another common key
-  if [[ -z "$VM_IP" || "$VM_IP" == "null" ]]; then
-     log ERROR "Could not get Colima VM IP address; skipping Pi-hole/DoH setup."
-     install_pihole=false # Use lowercase variable
-     install_doh=false    # Use lowercase variable
-  else
-     log INFO "Colima VM IP: $VM_IP (using .ipAddress)"
-     run "sleep 3" # Give Colima a moment
-  fi
+log INFO "Attempting to get Colima VM IP via 'colima status --json'..."
+if ! command -v jq >/dev/null; then
+    log ERROR "'jq' command not found, but required to parse Colima status. Please ensure jq is installed (e.g., 'brew install jq')."
+    install_pihole=false
+    install_doh=false
 else
-  log INFO "Colima VM IP: $VM_IP (using .address)"
-  run "sleep 3" # Give Colima a moment
-fi
+    # Get and log the raw JSON for debugging in case parsing fails
+    colima_status_json=$(colima status --json 2>/dev/null) # Capture JSON, suppress colima stderr for cleaner log
+    if [[ -z "$colima_status_json" ]]; then
+        log ERROR "'colima status --json' command produced no output. Is Colima running correctly?"
+        install_pihole=false
+        install_doh=false
+    else
+        log INFO "Raw 'colima status --json' output:"
+        log INFO "$colima_status_json" # Log the captured JSON
+
+        # Try known keys (add more possibilities if needed based on logged JSON)
+        VM_IP=$(echo "$colima_status_json" | jq -r '.address' 2>/dev/null) # Common top-level key
+
+        if [[ -z "$VM_IP" || "$VM_IP" == "null" ]]; then
+            log INFO "'.address' key did not yield IP. Trying '.Network.address'..." # Common nested structure
+            VM_IP=$(echo "$colima_status_json" | jq -r '.Network.address' 2>/dev/null)
+
+             if [[ -z "$VM_IP" || "$VM_IP" == "null" ]]; then
+                 log INFO "'.Network.address' key did not yield IP. Trying '.network.address' (lowercase)..." # Another variation
+                 VM_IP=$(echo "$colima_status_json" | jq -r '.network.address' 2>/dev/null)
+
+                 if [[ -z "$VM_IP" || "$VM_IP" == "null" ]]; then
+                     log INFO "'.network.address' key did not yield IP. Trying '.ipAddress' (legacy?)..."
+                     VM_IP=$(echo "$colima_status_json" | jq -r '.ipAddress' 2>/dev/null)
+                 fi
+             fi
+        fi
+
+        # Final check on extracted IP
+        if [[ -z "$VM_IP" || "$VM_IP" == "null" ]]; then
+            log ERROR "Could not extract Colima VM IP address from the JSON output above. Please examine the JSON and update the jq query in the script if necessary. Skipping Pi-hole/DoH setup."
+            install_pihole=false
+            install_doh=false
+        else
+            log INFO "Coloma VM IP successfully extracted: $VM_IP"
+            run "sleep 3" # Give Colima networking a moment to stabilize
+        fi
+    fi # End check for colima_status_json output
+fi # End check for jq command
 
 # Check if either Pihole or DoH is still enabled after checks
 if ! $install_pihole && ! $install_doh; then # Use lowercase config variables
