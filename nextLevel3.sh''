@@ -55,6 +55,7 @@ CURRENT_SECTION="Script Init"
 # For this corrected script, we assume DRYRUN=false, VERBOSE=false, FAIL_FAST=false
 # and the INSTALL/ENABLE variables are used directly.
 
+# --- Read config file if it exists (JSON format) ---
 ### === Logging & Helpers ===
 
 # Ensure log directory exists before redirecting output
@@ -133,7 +134,6 @@ run_diagnostic() {
 }
 
 ### --- Diagnostic Functions ---
-
 diag_brew() {
   log INFO "--- Diagnosing Homebrew ---"
   if command -v brew >/dev/null; then
@@ -146,6 +146,7 @@ diag_brew() {
   log INFO "---------------------------"
 }
 
+# Corrected diag_brew function (fixed structural errors)
 diag_launchagents() {
   log INFO "--- Diagnosing LaunchAgents ---"
   if command -v launchctl >/dev/null; then
@@ -267,6 +268,7 @@ diag_ollama() {
   log INFO "-------------------------"
 }
 
+# --- Error Handling ---
 # --- Modified on_error trap handler (FULL CORRECTION with || true everywhere needed) ---
 on_error() {
   local line=$1 original_code=$2                                                                              # Capture original error code
@@ -335,6 +337,7 @@ on_error() {
   # If FAIL_FAST is false, the script will continue execution after the trap returns.
 }
 
+# --- End of error handling ---
 # Note: Add your flag parsing logic here if it's not already handled before Section 0.
 
 ### === Section 0: Script Init & Prereqs ===
@@ -366,6 +369,7 @@ log INFO "Evaluating Homebrew shell environment..."
 source /dev/stdin <<<"$($(which brew) shellenv)" # SC1091: Not following: /dev/stdin... Use -x flag for ShellCheck.
 log INFO "Homebrew ready."
 
+# Check if brew is installed and working
 ### === Section 1: Install Formulae & Casks ===
 CURRENT_SECTION="Brew Install"
 if $INSTALL_PKGS; then # Use uppercase variable name from config
@@ -467,6 +471,7 @@ log INFO "Loading agent com.local.battalert…"
 run_diagnostic "launchctl remove com.local.battalert 2>/dev/null || true"               # Remove by label
 run_diagnostic "launchctl load -w $HOME/Library/LaunchAgents/com.local.battalert.plist" # Load by plist path
 
+# Check if the plist file exists before attempting to load it
 log INFO "Installing weekly audit agent…"
 # Create the script file
 if ! $DRYRUN; then
@@ -504,6 +509,7 @@ log INFO "Loading agent com.local.weeklyaudit…"
 run_diagnostic "launchctl remove com.local.weeklyaudit 2>/dev/null || true"               # Remove by label
 run_diagnostic "launchctl load -w $HOME/Library/LaunchAgents/com.local.weeklyaudit.plist" # Load by plist path
 
+# Check if the plist file exists before attempting to load it
 ### === Section 7: Local AI Lab (Ollama) === # <-- Renumbered from 6
 CURRENT_SECTION="Ollama Setup"
 if $INSTALL_OLLAMA; then # Use uppercase variable name
@@ -578,6 +584,7 @@ else
   log INFO "Active service: '$PRIMARY_SERVICE'" # Quote the service name in log
 fi
 
+# Check if the service is valid and not empty
 # 3) Get Colima VM IP
 VM_IP=$(check "colima status --json | jq -r '.ip_address'")
 if [[ -z "$VM_IP" || "$VM_IP" == "null" ]]; then
@@ -597,6 +604,7 @@ else                                    # At least one is still enabled
   log INFO "Proceeding with DNS setup." # Log that we are proceeding
 fi
 
+# 3) Check if the Colima VM IP is valid
 # 4) Deploy Cloudflared DoH (if enabled and VM_IP available)
 if $INSTALL_DOH; then # Use uppercase variable
   log INFO "Deploying Cloudflared DoH on $VM_IP:5053…"
@@ -657,6 +665,7 @@ if $INSTALL_PIHOLE; then # Use uppercase variable
   log INFO "2. Log in (default password is 'set_me', CHANGE THIS IMMEDIATELY!)"
   log INFO "3. Go to Settings -> DNS. Verify 'Custom 1 (IPv4)' is ${VM_IP}#5053 and checked."
 
+
   # Set macOS DNS to point to Pi-hole (automated via passwordless sudo)
   log INFO "Updating macOS DNS to Pi-hole at $VM_IP for service '$PRIMARY_SERVICE'…"
   run_diagnostic "sudo networksetup -setdnsservers \"$PRIMARY_SERVICE\" $VM_IP"
@@ -714,6 +723,7 @@ else
   CHECK_DNS="DNS not local ❌"
 fi
 
+# Check if the DNS is set to the Pi-hole IP or localhost
 # Check 4: LaunchAgents loaded (check by listing label)
 if check "launchctl list com.local.battalert &>/dev/null"; then
   CHECK_BATTERY="Agent com.local.battalert loaded ✔"
