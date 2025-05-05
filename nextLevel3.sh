@@ -307,7 +307,7 @@ if ! check "command -v brew &>/dev/null" || ! check "brew --version &>/dev/null"
   # Use source /dev/stdin for brew shellenv evaluation to handle its output syntax
   run 'arch -arm64 /bin/zsh -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"' # Corrected /bin/bash to /bin/zsh - use zsh as script is zsh
   # Add brew shellenv to zprofile for future sessions, use $(which brew) for robustness
-  run "echo 'eval \"\$($(which brew) shellenv)\"' >> ~/.zprofile"
+  run "grep -q 'eval \"\$($(which brew) shellenv)\"' ~/.zprofile || echo 'eval \"\$($(which brew) shellenv)\"' >> ~/.zprofile"
 fi
 # Evaluate brew shellenv in the current script for immediate use using source
 # FIX: Use source /dev/stdin for brew shellenv evaluation
@@ -396,6 +396,7 @@ if ! $DRYRUN; then
   <key>RunAtLoad</key><true/>
 </dict></plist>
 EOF_PLIST
+  # Corrected filename here
   # Corrected filename here
   # Corrected filename here
 fi
