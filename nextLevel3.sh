@@ -511,19 +511,13 @@ PRIMARY_SERVICE_ID=$(scutil <<<$'open\nshow State:/Network/Global/IPv4\nd.show' 
   awk -F': ' '/PrimaryService/ {gsub(/"/,""); print $2}')
 
 if [[ -n "$PRIMARY_SERVICE_ID" ]]; then
-  # Map the PrimaryService ID to a networksetup service name
-  # Handle cases where the device name might be like 'en0, en1'
-  PRIMARY_SERVICE=$(networksetup -listnetworkserviceorder |
-    awk -v ps_id="$PRIMARY_SERVICE_ID" '
-      # Look for the line containing the Service ID (Device: ...)
-      /Device:.*'$PRIMARY_SERVICE_ID'(,|\s|$)/ {
-        # The service name is on the line above this one
-        # Clean the name (remove number, parens, whitespace)
-        gsub(/^\([0-9]+\)\s*/, "", prev_line); gsub(/^\s+|\s+$/,"", prev_line);
-        print prev_line; exit
-      }
-      { prev_line = $0 } # Store the current line for the *next* iteration
-    ') # head -n 1 is not needed with this logic
+  # Robustly map the PrimaryService ID to its human-readable name
+  PRIMARY_SERVICE=$(
+    networksetup -listnetworkserviceorder |
+    sed -n "/Device: $PRIMARY_SERVICE_ID/{x;1p};h" |
+    head -1 |
+    sed -E 's/^\([0-9]+\)\s*//'
+  )
 fi
 
 if [[ -z "$PRIMARY_SERVICE" ]]; then # Check if mapping failed
