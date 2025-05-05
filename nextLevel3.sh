@@ -511,11 +511,9 @@ PRIMARY_SERVICE_ID=$(scutil <<<$'open\nshow State:/Network/Global/IPv4\nd.show' 
   awk -F': ' '/PrimaryService/ {gsub(/"/,""); print $2}')
 
 if [[ -n "$PRIMARY_SERVICE_ID" ]]; then
-  # Robustly map the PrimaryService ID to its human-readable name
   PRIMARY_SERVICE=$(
     networksetup -listnetworkserviceorder |
-    sed -n "/Device: $PRIMARY_SERVICE_ID/{x;1p};h" |
-    head -1 |
+    sed -n "1{h;d}; /Device: $PRIMARY_SERVICE_ID/{x;p;q}; h" |
     sed -E 's/^\([0-9]+\)\s*//'
   )
 fi
