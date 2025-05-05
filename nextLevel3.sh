@@ -500,95 +500,81 @@ if launchctl bootstrap gui/$(id -u) $HOME/Library/LaunchAgents/com.local.weeklya
 else
   run "launchctl load -w $HOME/Library/LaunchAgents/com.local.weeklyaudit.plist"
 fi
-### === Section 8: Advanced Networking (DoH + Pi-hole) === # <-- Renumbered from 7
+### === Section 8: Advanced Networking (DoH on Host + Pi-hole) === # <-- Renumbered from 7
 CURRENT_SECTION="Advanced Networking"
 
-# 1) Ensure passwordless sudo for networksetup
-log INFO "Configuring passwordless sudo for networksetup…"
-# Check if passwordless sudo is configured before running sudo -v,
-# to avoid unnecessary password prompt if already configured.
-if ! check "sudo -n true 2>/dev/null"; then # Use check()
+# Flags to track setup success
+local doh_agent_ok=false
+local pihole_config_ok=false
+local host_ip_from_colima_ok=false
+local vm_ip_ok=false
+local network_service_ok=false
+
+# --- 1) Ensure passwordless sudo for networksetup ---
+log INFO "Configuring passwordless sudo for networksetup..."
+if ! check "sudo -n true 2>/dev/null"; then
   log INFO "(Prompting for sudo password to cache it for this script run)"
-  sudo -v # This will prompt for password if needed and cache it
+  sudo -v # Cache sudo creds if needed
 fi
 SUDOERS="/etc/sudoers.d/nextlevel-network"
-# Check if the rule *exactly* matches before attempting to write
-if ! sudo grep -qF "$USER ALL=(root) NOPASSWD: /usr/sbin/networksetup -setdnsservers *" $SUDOERS 2>/dev/null; then
-  log INFO "Configuring passwordless sudo rule in $SUDOERS…"
+# Define the exact rule we want
+sudo_rule="$USER ALL=(root) NOPASSWD: /usr/sbin/networksetup -setdnsservers *"
+# Check if the rule already exists exactly as defined
+if ! sudo grep -Fxq -- "$sudo_rule" $SUDOERS 2>/dev/null; then
+  log INFO "Configuring passwordless sudo rule in $SUDOERS..."
   sudo mkdir -p /etc/sudoers.d
   sudo chmod 0755 /etc/sudoers.d
-  sudo tee $SUDOERS >/dev/null <<EOF_SUDO
-# Allow user '$USER' to run networksetup without password
-$USER ALL=(root) NOPASSWD: /usr/sbin/networksetup -setdnsservers *
-EOF_SUDO
+  # Use tee to write the rule - ensure USER variable expands correctly
+  echo "$sudo_rule" | sudo tee $SUDOERS >/dev/null
   sudo chmod 440 $SUDOERS
-  log INFO "✓ Passwordless sudo rule created"
+  log INFO "✓ Passwordless sudo rule created/updated"
 else
   log INFO "→ Passwordless sudo rule already exists in $SUDOERS"
 fi
 
-# 2) Detect currently active service via route and networksetup
+# --- 2) Detect Active Network Service Name ---
 log INFO "Detecting active network service..."
-PRIMARY_INTERFACE=$(route -n get default | awk '/interface:/ {print $2}') # Get default route interface (e.g., en0)
+PRIMARY_INTERFACE=$(route -n get default | awk '/interface:/ {print $2}')
 
 if [[ -z "$PRIMARY_INTERFACE" ]]; then
-  log ERROR "Could not determine default network interface. Skipping DNS setup."
-  install_pihole=false # Use lowercase variable
-  install_doh=false    # Use lowercase variable
+  log ERROR "Could not determine default network interface. Cannot set system DNS."
+  network_service_ok=false
 else
   log INFO "Default network interface: '$PRIMARY_INTERFACE'"
-  # Find the Service Name associated with this interface device
-  # Use grep -B1 to get the line *before* the matching Device line, which contains the service name
-  # Get the line *before* the Device line (which has the service name like '(1) Wi-Fi')
-  # Use head -n 1 to isolate that line, then sed to extract the name part.
+  # Use head/sed to extract service name reliably
   PRIMARY_SERVICE=$(networksetup -listnetworkserviceorder | grep -B1 "Device: $PRIMARY_INTERFACE)" | head -n 1 | sed -E 's/^\([0-9]+\)[[:space:]]*(.*)/\1/')
 
   if [[ -z "$PRIMARY_SERVICE" ]]; then
-    log ERROR "Could not find network service name for interface '$PRIMARY_INTERFACE'. Skipping DNS setup."
-    install_pihole=false # Use lowercase variable
-    install_doh=false    # Use lowercase variable
+    log ERROR "Could not find network service name for interface '$PRIMARY_INTERFACE'. Cannot set system DNS."
+    network_service_ok=false
   else
     log INFO "Active service for interface '$PRIMARY_INTERFACE' is '$PRIMARY_SERVICE'"
+    network_service_ok=true
   fi
 fi
 
-if [[ -z "$PRIMARY_SERVICE" ]]; then
-  log ERROR "Could not detect active service for ID '$PRIMARY_SERVICE_ID'; skipping DNS setup"
-  install_pihole=false install_doh=false
-else
-  log INFO "Active service: '$PRIMARY_SERVICE'"
-fi
-
-# 3) Get Colima VM IP
+# --- 3) Get Colima VM IP ---
 log INFO "Attempting to get Colima VM IP via 'colima status --json'..."
+VM_IP="" # Ensure variable is initialized
 if ! command -v jq >/dev/null; then
-  log ERROR "'jq' command not found; required to parse Colima status. Skipping Pi-hole/DoH setup."
-  install_pihole=false
-  install_doh=false
+  log ERROR "'jq' command not found; required to parse Colima status."
+  vm_ip_ok=false
 else
   colima_status_json=$(colima status --json 2>/dev/null)
   if [[ -z "$colima_status_json" ]]; then
     log ERROR "'colima status --json' produced no output. Is Colima running?"
-    install_pihole=false
-    install_doh=false
+    vm_ip_ok=false
   else
     log INFO "Raw 'colima status --json' output:"
     log INFO "$colima_status_json"
 
-    # Try these jq expressions in order; stop when one yields a non-empty IP
-    keys=(
-      '.network.address'
-      '.Network.address'
-      '.ip_address'
-      '.address'
-      '.ipAddress'
-    )
-
-    VM_IP=""
+    # Use the robust loop method to find the IP
+    keys=( '.network.address' '.Network.address' '.ip_address' '.address' '.ipAddress' )
     for key in "${keys[@]}"; do
       VM_IP=$(jq -r "$key // empty" <<<"$colima_status_json" 2>/dev/null)
       if [[ -n "$VM_IP" ]]; then
         log INFO "Extracted Colima VM IP using key '$key': $VM_IP"
+        vm_ip_ok=true
         break
       else
         log INFO "Key '$key' did not yield an IP; trying next…"
@@ -596,9 +582,8 @@ else
     done
 
     if [[ -z "$VM_IP" ]]; then
-      log ERROR "Could not extract Colima VM IP; tried ${keys[*]}. Skipping Pi-hole/DoH setup."
-      install_pihole=false
-      install_doh=false
+      log ERROR "Could not extract Colima VM IP; tried ${keys[*]}. Cannot proceed with Pi-hole/DoH."
+      vm_ip_ok=false
     else
       log INFO "Colima VM IP successfully extracted: $VM_IP"
       run "sleep 3"  # Let Colima networking settle
@@ -606,28 +591,18 @@ else
   fi
 fi
 
-# Check if either Pihole or DoH is still enabled after checks
-if ! $install_pihole && ! $install_doh; then # Use lowercase config variables
-  log INFO "Skipping Pi-hole and DoH deployment due to earlier checks."
-  # Skip the rest of Section 8
-else                                    # At least one is still enabled
-  log INFO "Proceeding with DNS setup." # Log that we are proceeding
-fi
-
-# 4) Deploy Cloudflared DoH (if enabled and VM_IP available)
-if $install_doh; then # Use lowercase variable
-  log INFO "Deploying Cloudflared DoH on $VM_IP:5053…"
-  # cloudflared should be installed in Section 1
-
-  # Ensure cloudflared binary path is correct (use brew --prefix)
+# --- 4) Deploy Cloudflared DoH on Host (if enabled) ---
+if $install_doh && $vm_ip_ok; then # Only proceed if DoH enabled AND we have VM IP (needed later for Pi-hole)
+  log INFO "Deploying Cloudflared DoH on Host 127.0.0.1:5053…"
   CLOUDFLARED_BIN="$(brew --prefix)/bin/cloudflared"
+
   if [[ ! -x "$CLOUDFLARED_BIN" ]]; then
       log ERROR "cloudflared binary not found or not executable at $CLOUDFLARED_BIN. Cannot create DoH agent."
-      install_doh=false # Skip loading if binary is missing
+      doh_agent_ok=false
   else
       log INFO "Using cloudflared binary at: $CLOUDFLARED_BIN"
       if ! $DRYRUN; then
-        # *** CORRECTED PLIST CONTENT HERE ***
+        # Create the plist file to listen on HOST LOCALHOST
         cat >"$HOME/Library/LaunchAgents/com.local.doh.plist" <<EOF_PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -640,7 +615,7 @@ if $install_doh; then # Use lowercase variable
         <string>${CLOUDFLARED_BIN}</string>
         <string>proxy-dns</string>
         <string>--address</string>
-        <string>${VM_IP}</string> <string>--port</string>
+        <string>127.0.0.1</string> <string>--port</string>
         <string>5053</string>
         <string>--upstream</string>
         <string>https://1.1.1.1/dns-query</string>
@@ -663,53 +638,127 @@ EOF_PLIST
       # Lint and load the DoH agent
       log INFO "DoH agent: lint, unload & bootstrap"
       run "plutil -lint $HOME/Library/LaunchAgents/com.local.doh.plist"
-      run "launchctl list com.local.doh && launchctl bootout gui/$(id -u) $HOME/Library/LaunchAgents/com.local.doh.plist || true"
-      if launchctl bootstrap gui/$(id -u) $HOME/Library/LaunchAgents/com.local.doh.plist; then
-          log INFO "Bootstrapped DoH agent ✔"
+      run "launchctl bootout gui/$(id -u) $HOME/Library/LaunchAgents/com.local.doh.plist || true"
+      if ! $DRYRUN; then
+          if launchctl bootstrap gui/$(id -u) $HOME/Library/LaunchAgents/com.local.doh.plist; then
+              log INFO "Bootstrapped DoH agent ✔"
+              doh_agent_ok=true
+          else
+              log WARN "Failed to bootstrap DoH agent, attempting legacy load..."
+              if run "launchctl load -w $HOME/Library/LaunchAgents/com.local.doh.plist"; then
+                 log INFO "Loaded DoH agent using legacy load ✔"
+                 doh_agent_ok=true
+              else
+                 log ERROR "Failed to load DoH agent using legacy load."
+                 doh_agent_ok=false
+              fi
+          fi
+          run "sleep 2" # Give agent time to start
+          run "launchctl list com.local.doh | grep '\"PID\"'" # Log PID status
       else
-          run "launchctl load -w $HOME/Library/LaunchAgents/com.local.doh.plist" # Fallback
+          log DRYRUN "Would load/bootstrap $HOME/Library/LaunchAgents/com.local.doh.plist"
+          # Assume ok for dry run if plist lint passes
+          if check "plutil -lint $HOME/Library/LaunchAgents/com.local.doh.plist"; then doh_agent_ok=true; fi
       fi
   fi # End check for CLOUDFLARED_BIN
+else
+  log INFO "Skipping Cloudflared DoH deployment (Disabled or prerequisite failed)."
+  # If DoH is disabled, Pi-hole config below will fail unless it uses a different upstream
+  if ! $install_doh ; then
+      log WARN "Pi-hole deployment requires DoH or another upstream; DNS1 env var will be missing."
+  fi
 fi # End if $install_doh
 
-# 5) Deploy Pi-hole, binding DNS to VM_IP and web UI to localhost
-if $install_pihole; then # Use lowercase variable
+# --- 5) Deploy Pi-hole with correct upstream and settings (if enabled) ---
+if $install_pihole && $vm_ip_ok && $doh_agent_ok; then # Need Pi-hole enabled, VM IP, and working DoH agent
   log INFO "Deploying Pi-hole container…"
 
-  # Remove any existing pihole container
-  run "docker rm -f pihole || true"
+  # Determine Host IP as seen from Colima VM
+  log INFO "Determining Host IP from Colima VM..."
+  HOST_IP_FROM_COLIMA=""
+  if command -v colima >/dev/null && check "colima status | grep Running"; then
+      # Use the route command identified earlier
+      HOST_IP_FROM_COLIMA=$(colima ssh -- ip route get 1.1.1.1 | awk '{print $7}' 2>/dev/null)
+      if [[ -z "$HOST_IP_FROM_COLIMA" ]]; then
+           log WARN "Could not auto-detect Host IP from Colima, trying default 192.168.5.1..."
+           # Fallback for common colima vz/NAT setup - might need adjustment for other network types
+           HOST_IP_FROM_COLIMA="192.168.5.1"
+           # Add a check to see if this fallback IP is reachable from VM? Maybe later.
+      fi
+  else
+      log WARN "Cannot run colima ssh; assuming default Host IP 192.168.5.1..."
+      HOST_IP_FROM_COLIMA="192.168.5.1" # Fallback
+  fi
 
-  # Deploy Pi-hole, binding port 53 to the VM's IP address, port 80 to host localhost
-  # This bypasses internal VM conflicts (like systemd-resolved)
-  # Pre-configure Pi-hole upstream to the Cloudflared proxy via env var
-  log INFO "Running docker container 'pihole' binding to ${VM_IP}:53 and 127.0.0.1:80"
-  run "docker run -d --name pihole \
-    -p $VM_IP:53:53/tcp -p $VM_IP:53:53/udp \
-    -p 127.0.0.1:80:80 \
-    --restart unless-stopped \
-    -v pihole_data:/etc/pihole \
-    -e TZ=$(date +%Z) \
-    -e WEBPASSWORD='set_me' \
-    -e DNS1=$VM_IP#5053 \
-    pihole/pihole:latest"
+  if [[ -z "$HOST_IP_FROM_COLIMA" ]]; then # Final check, should not happen with fallback
+      log ERROR "Could not determine Host IP from Colima VM. Cannot configure Pi-hole upstream."
+      pihole_config_ok=false
+  else
+      log INFO "Host IP as seen from Colima will be set to: $HOST_IP_FROM_COLIMA"
+      host_ip_from_colima_ok=true
 
-  log INFO "✓ Pi-hole bound to ${VM_IP}:53 with DoH upstream"
+      log INFO "Removing existing Pi-hole container if present..."
+      run "docker stop pihole || true"
+      run "docker rm pihole || true"
 
-  # --- Important Manual Step 1: Verify Pi-hole Setup & Password ---
-  # This step is pre-configured by the DNS1 env var above, but manual check/change is good
-  log INFO "Please VERIFY Pi-hole setup and CHANGE DEFAULT PASSWORD:"
-  log INFO "1. Access Pi-hole web UI at http://127.0.0.1/admin" # Use 127.0.0.1 because port 80 is mapped there
-  log INFO "2. Log in (default password is 'set_me', CHANGE THIS IMMEDIATELY!)"
-  log INFO "3. Go to Settings -> DNS. Verify 'Custom 1 (IPv4)' is ${VM_IP}#5053 and checked."
+      log INFO "Running docker container 'pihole' binding DNS to ${VM_IP}:53, web to 127.0.0.1:80"
+      log INFO "Configuring Pi-hole upstream DNS to Host DoH at ${HOST_IP_FROM_COLIMA}:5053"
+      log INFO "Configuring Pi-hole to 'Permit all origins' via DNSMASQ_LISTENING=all"
+      run "docker run -d --name pihole \
+        -p $VM_IP:53:53/tcp -p $VM_IP:53:53/udp \
+        -p 127.0.0.1:80:80 \
+        --restart unless-stopped \
+        -v pihole_data:/etc/pihole \
+        -e TZ=$(date +%Z) \
+        -e WEBPASSWORD='set_me' \
+        -e DNS1=\"${HOST_IP_FROM_COLIMA}#5053\" \
+        -e DNSMASQ_LISTENING=all \
+        pihole/pihole:latest"
 
-  # Set macOS DNS to point to Pi-hole (automated via passwordless sudo)
-  log INFO "Updating macOS DNS to Pi-hole at $VM_IP for service '$PRIMARY_SERVICE'…"
-  run "sudo networksetup -setdnsservers \"$PRIMARY_SERVICE\" $VM_IP"
-  # Flush DNS caches to make the change take effect immediately
-  run "dscacheutil -flushcache && sudo killall -HUP mDNSResponder || true"
-  log INFO "✓ macOS DNS set to Pi-hole ($VM_IP) and caches flushed."
+      log INFO "✓ Pi-hole container started."
+      log INFO "Waiting ~15s for Pi-hole to initialize..."
+      run "sleep 15" # Give Pi-hole time to start FTL
 
-fi
+      # Verify Pi-hole is running and reachable (basic check)
+      if check "docker ps --filter name=pihole --filter status=running -q"; then
+         log INFO "Pi-hole container running. Testing DNS resolution via Pi-hole..."
+         # Test query directly to Pi-hole's IP
+         if dig +short +time=3 +tries=1 apple.com "@${VM_IP}" > /dev/null; then
+             log INFO "✅ Initial DNS test via Pi-hole SUCCEEDED."
+             pihole_config_ok=true
+
+             # Set macOS DNS only if everything seems ok so far
+             if $network_service_ok; then
+               log INFO "Updating macOS DNS to Pi-hole at $VM_IP for service '$PRIMARY_SERVICE'…"
+               run "sudo networksetup -setdnsservers \"$PRIMARY_SERVICE\" $VM_IP"
+               log INFO "Flushing DNS cache..."
+               run "dscacheutil -flushcache && sudo killall -HUP mDNSResponder || true"
+               log INFO "✓ macOS DNS set to Pi-hole ($VM_IP) and caches flushed."
+             else
+               log WARN "Primary network service name not determined earlier. Cannot automatically set macOS DNS."
+               log WARN "Please set DNS manually for your active network service to $VM_IP."
+             fi
+         else
+             log ERROR "❌ Initial DNS test via Pi-hole FAILED. Check 'docker logs pihole'."
+             pihole_config_ok=false
+         fi
+      else
+         log ERROR "Pi-hole container is not running after start attempt."
+         pihole_config_ok=false
+      fi
+
+      # --- Password Reminder ---
+      log INFO "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+      log INFO "MANUAL ACTION REMINDER: CHANGE PI-HOLE PASSWORD"
+      log INFO "1. Access Pi-hole web UI at http://127.0.0.1/admin"
+      log INFO "2. Log in (default password is 'set_me')"
+      log INFO "3. CHANGE THE PASSWORD!"
+      log INFO "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+
+  fi # End check HOST_IP_FROM_COLIMA valid
+else
+  log INFO "Skipping Pi-hole deployment (Disabled or prerequisite failed: VM IP=${vm_ip_ok}, DoH Agent=${doh_agent_ok})."
+fi # End if $install_pihole
 
 ### === Section 9: Launch NordVPN === # <-- Renumbered from 8
 CURRENT_SECTION="NordVPN Launch"
