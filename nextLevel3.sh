@@ -529,17 +529,21 @@ fi
 
 # 2) Detect currently active service via scutil
 log INFO "Detecting active network service…"
-PRIMARY_SERVICE_ID=$(
-  scutil <<<$'open\nshow State:/Network/Global/IPv4\nd.show' \
-    2>/dev/null |
-    awk -F': ' '/PrimaryService/ {gsub(/"/,""); print $2}'
-)
-
 if [[ -n "$PRIMARY_SERVICE_ID" ]]; then
   PRIMARY_SERVICE=$(
-    networksetup -listnetworkserviceorder |
-      sed -n "1{h;d}; /Device: $PRIMARY_SERVICE_ID/{x;p;q;}; h" |
-      sed -E 's/^\([0-9]+\)\s*//'
+    networksetup -listnetworkserviceorder \
+      | awk -v id="$PRIMARY_SERVICE_ID" '
+          # stash each line in prev; when we see the matching Device: id, print prev and exit
+          {
+            if ($0 ~ "Device: " id) {
+              # strip leading "(number) " from the stored prev line:
+              sub(/^\([0-9]+\)[[:space:]]*/, "", prev)
+              print prev
+              exit
+            }
+            prev = $0
+          }
+        '
   )
 fi
 
