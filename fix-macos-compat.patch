@@ -1,0 +1,56 @@
+diff --git a/nextLevel3.sh b/nextLevel3.sh
+index abcdef1..abcdef2 100755
+--- a/nextLevel3.sh
++++ b/nextLevel3.sh
+@@ -510,19 +510,22 @@ fi
+
+ ### === Section 8: Advanced Networking (DoH + Pi-hole) ===
+ CURRENT_SECTION="Advanced Networking"
+-# 2) Detect currently active service via scutil
++log INFO "Detecting active network service…"
+ PRIMARY_SERVICE_ID=$(scutil <<<$'open\nshow State:/Network/Global/IPv4\nd.show' 2>/dev/null |
+   awk -F': ' '/PrimaryService/ {gsub(/"/,""); print $2}')
+
+-if [[ -n "$PRIMARY_SERVICE_ID" ]]; then
+-  # Map the PrimaryService ID to a networksetup service name
+-  # Handle cases where the device name might be like 'en0, en1'
+-  PRIMARY_SERVICE=$(networksetup -listnetworkserviceorder |
+-    awk -v ps_id="$PRIMARY_SERVICE_ID" '
+-      /Device:.*'$PRIMARY_SERVICE_ID'(,|\s|$)/ {
+-        gsub(/^\([0-9]+\)\s*/, "", prev_line); gsub(/^\s+|\s+$/,"", prev_line);
+-        print prev_line; exit
+-      }
+-      { prev_line = $0 }
+-    ')
+-fi
++if [[ -n "$PRIMARY_SERVICE_ID" ]]; then
++  # BSD-sed based lookup: print the line BEFORE the Device: line, strip the "(N)"
++  PRIMARY_SERVICE=$(
++    networksetup -listnetworkserviceorder |
++    sed -n "1{h;d}; /Device: $PRIMARY_SERVICE_ID/{x;p;q}; h" |
++    sed -E 's/^\([0-9]+\)\s*//'
++  )
++fi
+
+ if [[ -z "$PRIMARY_SERVICE" ]]; then
+   log ERROR "Could not detect active service name for ID '$PRIMARY_SERVICE_ID'; skipping Advanced Networking setup"
+@@ -656,8 +659,14 @@ fi
+
+ ### === Section 6: LaunchAgents (Battery & Audit) ===
+ CURRENT_SECTION="LaunchAgents"
+-# ... weekly audit agent load
+-run "launchctl remove com.local.weeklyaudit 2>/dev/null || true"
+-run "launchctl load -w $HOME/Library/LaunchAgents/com.local.weeklyaudit.plist"
++# Before we bootstrap, lint and unload any existing instance
++run "plutil -lint $HOME/Library/LaunchAgents/com.local.weeklyaudit.plist"
++run "launchctl list com.local.weeklyaudit \
++      && launchctl bootout gui/$(id -u) $HOME/Library/LaunchAgents/com.local.weeklyaudit.plist || true"
++# Now bootstrap (modern) or fallback to load (legacy)
++if launchctl bootstrap gui/$(id -u) $HOME/Library/LaunchAgents/com.local.weeklyaudit.plist; then
++  log INFO "Bootstrapped weekly audit agent ✔"
++else
++  run "launchctl load -w $HOME/Library/LaunchAgents/com.local.weeklyaudit.plist"
++fi
+
+ ### === Section 8: Advanced Networking (DoH + Pi-hole) ===
+ CURRENT_SECTION="Advanced Networking"

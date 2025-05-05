@@ -465,6 +465,8 @@ EOF_PLIST
 fi
 # Use the more robust remove/load -w sequence
 log INFO "Loading agent com.local.weeklyaudit…"
+run "launchctl remove com.local.weeklyaudit 2>/dev/null || true"               # Remove by label
+run "launchctl load -w $HOME/Library/LaunchAgents/com.local.weeklyaudit.plist" # Load by plist path
 
 ### === Section 7: Local AI Lab (Ollama) === # <-- Renumbered from 6
 CURRENT_SECTION="Ollama Setup"
@@ -475,15 +477,6 @@ if $install_ollama; then # Use lowercase variable name
   run "ollama pull mistral:7b || true"
 fi
 
-
-# Weekly audit agent: lint, unload any existing, then bootstrap (or fallback to load)
-run "plutil -lint $HOME/Library/LaunchAgents/com.local.weeklyaudit.plist"
-run "launchctl list com.local.weeklyaudit && launchctl bootout gui/$(id -u) $HOME/Library/LaunchAgents/com.local.weeklyaudit.plist || true"
-if launchctl bootstrap gui/$(id -u) $HOME/Library/LaunchAgents/com.local.weeklyaudit.plist; then
-  log INFO "Bootstrapped weekly audit agent ✔"
-else
-  run "launchctl load -w $HOME/Library/LaunchAgents/com.local.weeklyaudit.plist"
-fi
 ### === Section 8: Advanced Networking (DoH + Pi-hole) === # <-- Renumbered from 7
 CURRENT_SECTION="Advanced Networking"
 
