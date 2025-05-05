@@ -17,7 +17,7 @@
       "problemMatcher": []
     },
     {
-      "label": "Fix endif to fi",
+      "label": "Fix `endif` → `fi`",
       "type": "process",
       "command": "/usr/bin/sed",
       "args": [
@@ -29,7 +29,31 @@
       "problemMatcher": []
     },
     {
-      "label": "Insert missing then",
+      "label": "Fix `run` → `run_cmd`",
+      "type": "process",
+      "command": "/usr/bin/sed",
+      "args": [
+        "-i", "''",
+        "s/\\brun\\b/run_cmd/g",
+        "${file}"
+      ],
+      "presentation": { "reveal": "never" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Fix `check` → `run_cmd_check`",
+      "type": "process",
+      "command": "/usr/bin/sed",
+      "args": [
+        "-i", "''",
+        "s/\\bcheck\\b/run_cmd_check/g",
+        "${file}"
+      ],
+      "presentation": { "reveal": "never" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Insert missing `then`",
       "type": "process",
       "command": "/bin/bash",
       "args": [
@@ -40,7 +64,7 @@
       "problemMatcher": []
     },
     {
-      "label": "Un-brace stray else",
+      "label": "Un-brace stray `else`",
       "type": "process",
       "command": "/usr/bin/sed",
       "args": [
@@ -56,7 +80,7 @@
       "type": "shell",
       "command": "/opt/homebrew/bin/shellcheck",
       "args": [
-        "-s", "bash",
+        "-s", "zsh",
         "-f", "gcc",
         "${file}"
       ],
@@ -79,9 +103,11 @@
       "dependsOrder": "sequence",
       "dependsOn": [
         "Add Shebang if missing",
-        "Fix endif to fi",
-        "Insert missing then",
-        "Un-brace stray else",
+        "Fix `endif` → `fi`",
+        "Fix `run` → `run_cmd`",
+        "Fix `check` → `run_cmd_check`",
+        "Insert missing `then`",
+        "Un-brace stray `else`",
         "ShellCheck script"
       ],
       "group": { "kind": "build", "isDefault": true },
@@ -120,4 +146,8 @@
     }
   ]
 }
-// This tasks.json file is designed to automate the process of linting and formatting shell scripts.
+// This tasks.json file is used to automate the process of linting and formatting shell scripts
+// in a VSCode workspace. It includes tasks for adding shebangs, fixing common issues,
+// running ShellCheck, and formatting the tasks.json file itself. The tasks are designed
+// to be run in sequence, and the output is presented in a dedicated panel for easy review.
+// The tasks are designed to be run in sequence, and the output is presented in a dedicated panel for easy review.
