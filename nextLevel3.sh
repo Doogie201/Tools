@@ -73,6 +73,23 @@ log() {
     "$color" "$(date +'%Y-%m-%dT%H:%M:%S')" "$level" "$msg" "$COLOR_RESET" >&2 # Log to stderr (usually seen immediately)
 }
 
+# --- Helpers & Aliases ---
+# run:      log & execute a command
+# check:    silently test a command (zero-return is “true”)
+run() {
+  log INFO "▶ $*"
+  eval "$@"
+}
+
+check() {
+  log INFO "Checking: $*"
+  eval "$@" >/dev/null 2>&1
+}
+
+# for backward-compatibility with your sed-renames:
+run_cmd()        { run      "$@"; }
+run_cmd_check()  { check    "$@"; }
+
 # --- Diagnostic Functions ---
 run_diagnostic() {
   local cmd="$*"
