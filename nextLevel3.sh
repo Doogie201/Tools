@@ -458,16 +458,25 @@ fi
 run "chmod +x ~/Scripts/weeklyAudit.sh"
 # Create the plist file
 if ! $DRYRUN; then
-  cat >~/Library/LaunchAgents/com.local.weeklyaudit.plist <<'EOF_PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"> # Corrected URL here
-<plist version="1.0"><dict>
-  <key>Label</key><string>com.local.weeklyaudit</string>
-  <key>ProgramArguments</key><array><string>$HOME/Scripts/weeklyAudit.sh</string></array>
-  <key>StartCalendarInterval</key>
-    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer></dict>
-  <key>RunAtLoad</key><true/>
-</dict></plist>
+  cat >"$HOME/Library/LaunchAgents/com.local.weeklyaudit.plist" <<'EOF_PLIST'
+  <?xml version="1.0" encoding="UTF-8"?>
+  <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+  <plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.local.weeklyaudit</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>$HOME/Scripts/weeklyAudit.sh</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+      <key>Weekday</key><integer>1</integer>
+      <key>Hour</key><integer>9</integer>
+    </dict>
+    <key>RunAtLoad</key><true/>
+  </dict>
+  </plist>
 EOF_PLIST
 fi
 # Use the more robust remove/load -w sequence
@@ -563,24 +572,18 @@ if $install_doh; then # Use lowercase variable
   log INFO "Deploying Cloudflared DoH on $VM_IP:5053…"
   # cloudflared is installed in Section 1
   if ! $DRYRUN; then
-    cat >~/Library/LaunchAgents/com.local.doh.plist <<'EOF_PLIST'
+    cat > "$HOME/Library/LaunchAgents/com.local.weeklyaudit.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "…">
 <plist version="1.0">
-<dict>
-  <key>Label</key><string>com.local.doh</string>
-  <key>ProgramArguments</key>
-    <array>
-      <string>$(which cloudflared)</string>
-      <string>proxy-dns</string>
-      <string>--address</string><string>${VM_IP}</string> # Make it listen on VM IP
-      <string>--port</string><string>5053</string>       # On the host
-      <string>--upstream</string><string>https://1.1.1.1/dns-query</string>
-    </array>
-  <key>KeepAlive</key><true/>
-  <key>RunAtLoad</key><true/>
-</dict></plist>
-EOF_PLIST
+  <dict>
+    <!-- Weekly audit agent: runs your ~/Scripts/weeklyAudit.sh every Monday -->
+    <key>Label</key>
+    <string>com.local.weeklyaudit</string>
+    …
+  </dict>
+</plist>
+EOF
   fi
   # Use the more robust remove/load -w sequence
   log INFO "Loading agent com.local.doh…"
