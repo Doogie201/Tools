@@ -96,8 +96,8 @@ check() {
 }
 
 # for backward-compatibility with your sed-renames:
-run_cmd()        { run      "$@"; }
-run_cmd_check()  { check    "$@"; }
+run_cmd() { run "$@"; }
+run_cmd_check() { check "$@"; }
 
 # --- Diagnostic Functions ---
 run_diagnostic() {
@@ -425,11 +425,18 @@ EOF_PLIST
   # Corrected filename here
   # Corrected filename here
   # Corrected filename here
+  # Corrected filename here
 fi
 # Use the more robust remove/load -w sequence
-log INFO "Loading agent com.local.battalert…"
-run "launchctl remove com.local.battalert 2>/dev/null || true"               # Remove by label
-run "launchctl load -w $HOME/Library/LaunchAgents/com.local.battAlert.plist" # Load by plist path - Corrected filename here
+log INFO "Battery alert agent: lint, unload & bootstrap"
+run "plutil -lint $HOME/Library/LaunchAgents/com.local.battAlert.plist"
+run "launchctl list com.local.battalert && \
+    launchctl bootout gui/$(id -u) $HOME/Library/LaunchAgents/com.local.battAlert.plist || true"
+if launchctl bootstrap gui/$(id -u) $HOME/Library/LaunchAgents/com.local.battAlert.plist; then
+  log INFO "Bootstrapped battery alert agent ✔"
+else
+  run "launchctl load -w $HOME/Library/LaunchAgents/com.local.battAlert.plist"
+fi
 
 log INFO "Installing weekly audit agent…"
 # Create the script file
@@ -475,7 +482,6 @@ if $install_ollama; then # Use lowercase variable name
   run "ollama pull mistral:7b || true"
 fi
 
-
 # Weekly audit agent: lint, unload any existing, then bootstrap (or fallback to load)
 run "plutil -lint $HOME/Library/LaunchAgents/com.local.weeklyaudit.plist"
 run "launchctl list com.local.weeklyaudit && launchctl bootout gui/$(id -u) $HOME/Library/LaunchAgents/com.local.weeklyaudit.plist || true"
@@ -513,23 +519,25 @@ fi
 
 # 2) Detect currently active service via scutil
 log INFO "Detecting active network service…"
-# Use scutil to find the PrimaryService, then map it to a networksetup service name
-PRIMARY_SERVICE_ID=$(scutil <<<$'open\nshow State:/Network/Global/IPv4\nd.show' 2>/dev/null |
-  awk -F': ' '/PrimaryService/ {gsub(/"/,""); print $2}')
+PRIMARY_SERVICE_ID=$(
+  scutil <<<$'open\nshow State:/Network/Global/IPv4\nd.show' \
+    2>/dev/null |
+    awk -F': ' '/PrimaryService/ {gsub(/"/,""); print $2}'
+)
 
 if [[ -n "$PRIMARY_SERVICE_ID" ]]; then
   PRIMARY_SERVICE=$(
     networksetup -listnetworkserviceorder |
-    sed -n "1{h;d}; /Device: $PRIMARY_SERVICE_ID/{x;p;q}; h" |
-    sed -E 's/^\([0-9]+\)\s*//'
+      sed -n "1{h;d}; /Device: $PRIMARY_SERVICE_ID/{x;p;q}; h" |
+      sed -E 's/^\([0-9]+\)\s*//'
   )
 fi
 
-if [[ -z "$PRIMARY_SERVICE" ]]; then # Check if mapping failed
-  log ERROR "Could not detect active service name for ID '$PRIMARY_SERVICE_ID'; skipping Advanced Networking setup"
-  INSTALL_PIHOLE=false INSTALL_DOH=false # Disable installation
+if [[ -z "$PRIMARY_SERVICE" ]]; then
+  log ERROR "Could not detect active service for ID '$PRIMARY_SERVICE_ID'; skipping DNS setup"
+  install_pihole=false install_doh=false
 else
-  log INFO "Active service: '$PRIMARY_SERVICE'" # Quote the service name in log
+  log INFO "Active service: '$PRIMARY_SERVICE'"
 fi
 
 # 3) Get Colima VM IP
