@@ -32,6 +32,15 @@ INSTALL_DOH=true
 ENABLE_YUBI=true
 ENABLE_NORD=true
 
+# === Lowercase aliases for config flags ===
+install_packages=$INSTALL_PKGS
+install_casks=$INSTALL_CASKS
+install_ollama=$INSTALL_OLLAMA
+install_pihole=$INSTALL_PIHOLE
+install_doh=$INSTALL_DOH
+enable_yubikey=$ENABLE_YUBI
+enable_nord=$ENABLE_NORD
+
 # Variable to track current script section for diagnostics
 CURRENT_SECTION="Script Init"
 
