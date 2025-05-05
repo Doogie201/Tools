@@ -426,6 +426,7 @@ EOF_PLIST
   # Corrected filename here
   # Corrected filename here
   # Corrected filename here
+  # Corrected filename here
 fi
 # Use the more robust remove/load -w sequence
 log INFO "Battery alert agent: lint, unload & bootstrap"
@@ -572,7 +573,7 @@ if $install_doh; then # Use lowercase variable
   log INFO "Deploying Cloudflared DoH on $VM_IP:5053…"
   # cloudflared is installed in Section 1
   if ! $DRYRUN; then
-    cat > "$HOME/Library/LaunchAgents/com.local.weeklyaudit.plist" <<EOF
+    cat >"$HOME/Library/LaunchAgents/com.local.weeklyaudit.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "…">
 <plist version="1.0">
