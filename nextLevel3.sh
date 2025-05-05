@@ -1,14 +1,15 @@
 #!/usr/bin/env zsh
+# shellcheck disable=SC1091,SC2030,SC2031,SC2034,SC2086,SC2154,SC2155,SC2016
 ###############################################################################
-# nextLevel.sh v2.10 – One-shot “genius-level” setup for M2 Pro Mac
+# nextLevel.sh v2.9 – One-shot “genius-level” setup for M2 Pro Mac
 # Combined Pi-hole + Cloudflared DoH + Automated Checks
 # Fully automated, DRY-RUN / VERBOSE flags, active service detection, robust error handling.
 # FINAL: Using launchctl remove/load -w for ALL LaunchAgents for maximum robustness.
 # Includes built-in section-specific diagnostics on error.
 # FIX: Use source /dev/stdin for brew shellenv evaluation.
 # FIX: Use launchctl remove/load -w for all user LaunchAgents.
-# FIX: Corrected ALL Zsh syntax (endif -> fi) and plist DTD URL.
-# FIX: Use networksetup -getcurrentnetworkservice for active service detection.
+# FIX: Corrected ALL Zsh syntax (fi -> fi) and plist DTD URL.
+# FIX: Detect and set DNS on the *currently active* network service.
 ###############################################################################
 set -eEuo pipefail
 trap 'on_error $LINENO $?' ERR
@@ -31,6 +32,15 @@ INSTALL_DOH=true
 ENABLE_YUBI=true
 ENABLE_NORD=true
 
+# === Lowercase aliases for config flags ===
+install_packages=$INSTALL_PKGS
+install_casks=$INSTALL_CASKS
+install_ollama=$INSTALL_OLLAMA
+install_pihole=$INSTALL_PIHOLE
+install_doh=$INSTALL_DOH
+enable_yubikey=$ENABLE_YUBI
+enable_nord=$ENABLE_NORD
+
 # Variable to track current script section for diagnostics
 CURRENT_SECTION="Script Init"
 
@@ -38,7 +48,7 @@ CURRENT_SECTION="Script Init"
 # Ensure log directory exists before redirecting output
 if ! $DRYRUN; then
   mkdir -p "$LOG_DIR"
-endif
+fi
 LOGFILE="$LOG_DIR/$(date +%F_%H-%M-%S).log"
 # Redirect stdout and stderr to tee to capture logs and see output
 if ! $DRYRUN; then
@@ -47,48 +57,76 @@ if ! $DRYRUN; then
     exec > >(tee -a "$LOGFILE") 2>&1
   else
     log WARN "tee not found. Logging only to stderr."
-  endif
+  fi
 fi
 
 # ANSI color codes for logging
 COLOR_RESET=$'\033[0m'
-COLOR_INFO=$'\033[0;34m' # Blue
-COLOR_WARN=$'\033[0;33m' # Yellow
-COLOR_ERROR=$'\033[0;31m' # Red
+COLOR_INFO=$'\033[0;34m'   # Blue
+COLOR_WARN=$'\033[0;33m'   # Yellow
+COLOR_ERROR=$'\033[0;31m'  # Red
 COLOR_DRYRUN=$'\033[0;36m' # Cyan
 
 log() {
   local level=$1 msg="$2" # Use "$2" in case message has spaces
   local color
   case $level in
-    INFO)  color=$COLOR_INFO ;;
-    WARN)  color=$COLOR_WARN ;;
+    INFO) color=$COLOR_INFO ;;
+    WARN) color=$COLOR_WARN ;;
     ERROR) color=$COLOR_ERROR ;;
-    DRYRUN)color=$COLOR_DRYRUN ;;
-    *)     color=$COLOR_RESET ;; # Fallback or default
+    DRYRUN) color=$COLOR_DRYRUN ;;
+    *) color=$COLOR_RESET ;; # Fallback or default
   esac
   # Print timestamp, level, message with color
   printf "%s[%s] [%s] %s%s\n" \
     "$color" "$(date +'%Y-%m-%dT%H:%M:%S')" "$level" "$msg" "$COLOR_RESET" >&2 # Log to stderr (usually seen immediately)
 }
 
+# --- Helpers & Aliases ---
+# run:      log & execute a command
+# check:    silently test a command (zero-return is “true”)
+run() {
+  log INFO "▶ $*"
+  eval "$@"
+}
+
+check() {
+  log INFO "Checking: $*"
+  eval "$@" >/dev/null 2>&1
+}
+
+# for backward-compatibility with your sed-renames:
+run_cmd() { run "$@"; }
+run_cmd_check() { check "$@"; }
+
 # --- Diagnostic Functions ---
 run_diagnostic() {
-    local cmd="$*"
-    log INFO ">>> Running Diagnostic: $cmd"
-    # Run diagnostic command, allow it to fail, capture output and exit status
-    local output error_output exit_code
-    # Use a temporary file for stderr to capture it correctly
-    local stderr_tmp=$(mktemp)
-    output=$(eval "$cmd" 2> "$stderr_tmp"; exit_code=$? )
-    error_output=$(cat "$stderr_tmp")
-    rm "$stderr_tmp"
+  local cmd="$*"
+  log INFO ">>> Running Diagnostic: $cmd"
+  # Run diagnostic command, allow it to fail, capture output and exit status
+  local output error_output exit_code
+  # Use a temporary file for stderr to capture it correctly
+  local stderr_tmp=$(mktemp)
+  output=$(
+    eval "$cmd" 2>"$stderr_tmp"
+    exit_code=$?
+  )
+  error_output=$(cat "$stderr_tmp")
+  rm "$stderr_tmp"
 
-    # Print output if any
-    if [[ -n "$output" ]]; then log INFO ">>> --- STDOUT ---"; log INFO "$output"; log INFO ">>> ------------"; fi
-    if [[ -n "$error_output" ]]; then log INFO ">>> --- STDERR ---"; log INFO "$error_output"; log INFO ">>> ------------"; fi
-    log INFO ">>> Diagnostic Exit Code: $exit_code"
-    return $exit_code # Return the diagnostic command's exit code
+  # Print output if any
+  if [[ -n "$output" ]]; then
+    log INFO ">>> --- STDOUT ---"
+    log INFO "$output"
+    log INFO ">>> ------------"
+  fi
+  if [[ -n "$error_output" ]]; then
+    log INFO ">>> --- STDERR ---"
+    log INFO "$error_output"
+    log INFO ">>> ------------"
+  fi
+  log INFO ">>> Diagnostic Exit Code: $exit_code"
+  return $exit_code # Return the diagnostic command's exit code
 }
 
 diag_brew() {
@@ -113,27 +151,27 @@ diag_launchagents() {
 
     log INFO "Listing user agents:"
     run_diagnostic "launchctl list gui/$(id -u)" # List all user agents
-    
+
     # Check specific agents known to the script
     local agents=("com.local.battalert" "com.local.weeklyaudit" "com.local.doh")
     for agent in "${agents[@]}"; do
       log INFO "Checking status for agent $agent:"
       run_diagnostic "launchctl list $agent" # Check specific agent status
       if [[ -f "$HOME/Library/LaunchAgents/$agent.plist" ]]; then
-          log INFO "Linting plist file: $HOME/Library/LaunchAgents/$agent.plist"
-          run_diagnostic "plutil -lint $HOME/Library/LaunchAgents/$agent.plist" # Lint the actual file
-          run_diagnostic "cat $HOME/Library/LaunchAgents/$agent.plist" # Show plist content
+        log INFO "Linting plist file: $HOME/Library/LaunchAgents/$agent.plist"
+        run_diagnostic "plutil -lint $HOME/Library/LaunchAgents/$agent.plist" # Lint the actual file
+        run_diagnostic "cat $HOME/Library/LaunchAgents/$agent.plist"          # Show plist content
       else
-          log WARN "Plist file not found for agent $agent: $HOME/Library/LaunchAgents/$agent.plist"
+        log WARN "Plist file not found for agent $agent: $HOME/Library/LaunchAgents/$agent.plist"
       fi
     done
-     log INFO "Listing files in ~/Library/LaunchAgents:"
-     run_diagnostic "ls -l ~/Library/LaunchAgents/" # Check permissions/existence
-     run_diagnostic "ls -leO@d ~/Library/LaunchAgents/" # Check dir permissions/attributes
+    log INFO "Listing files in ~/Library/LaunchAgents:"
+    run_diagnostic "ls -l ~/Library/LaunchAgents/"     # Check permissions/existence
+    run_diagnostic "ls -leO@d ~/Library/LaunchAgents/" # Check dir permissions/attributes
 
   else
     log WARN "launchctl command not found. Cannot run launchctl diagnostics."
-  endif
+  fi
   log INFO "-------------------------------"
 }
 
@@ -141,12 +179,12 @@ diag_docker_networking() {
   log INFO "--- Diagnosing Docker/Colima Networking ---"
   if command -v colima >/dev/null; then
     run_diagnostic "colima status"
-    run_diagnostic "colima logs" # Show recent colima logs
-    if check "colima ssh -- true"; then # Check colima ssh connectivity first
-        run_diagnostic "colima ssh -- df -h" # Check space in VM
+    run_diagnostic "colima logs"           # Show recent colima logs
+    if check "colima ssh -- true"; then    # Check colima ssh connectivity first
+      run_diagnostic "colima ssh -- df -h" # Check space in VM
     else
-        log WARN "colima ssh connectivity failed. Cannot run VM diagnostics."
-    endif
+      log WARN "colima ssh connectivity failed. Cannot run VM diagnostics."
+    fi
 
     if command -v docker >/dev/null; then
       run_diagnostic "docker ps -a" # List all containers
@@ -159,51 +197,50 @@ diag_docker_networking() {
         run_diagnostic "sudo lsof -nP -iUDP:53"
       else
         log WARN "lsof command not found. Cannot check host port listeners."
-      endif
+      fi
       # Check port 53 listeners inside the Colima VM
       log INFO "Checking VM port 53 listeners (via colima ssh):"
       if command -v colima >/dev/null && command -v lsof >/dev/null && check "colima ssh -- true"; then # Check colima ssh connectivity first
-         # Need to pass commands carefully to colima ssh
-         run_diagnostic "colima ssh -- sudo lsof -nP -iTCP:53 -sTCP:LISTEN"
-         run_diagnostic "colima ssh -- sudo lsof -nP -iUDP:53"
+        # Need to pass commands carefully to colima ssh
+        run_diagnostic "colima ssh -- sudo lsof -nP -iTCP:53 -sTCP:LISTEN"
+        run_diagnostic "colima ssh -- sudo lsof -nP -iUDP:53"
       else
-         log WARN "colima ssh not working or lsof not found in VM. Cannot check VM port listeners."
-      endif
+        log WARN "colima ssh not working or lsof not found in VM. Cannot check VM port listeners."
+      fi
     else
       log WARN "docker command not found. Cannot run docker diagnostics."
-    endif
+    fi
   else
     log WARN "colima command not found. Cannot run colima diagnostics."
-  endif
+  fi
   log INFO "-------------------------------------------"
 }
 
 diag_ollama() {
-    log INFO "--- Diagnosing Ollama ---"
-    if command -v ollama >/dev/null; then
-        run_diagnostic "ollama list"
-        run_diagnostic "ollama --version"
-        # Check if brew services is available to get service info/logs
-        if command -v brew >/dev/null && command -v brew services >/dev/null; then
-             run_diagnostic "brew services info ollama" # May provide log path
-             # Attempt to show logs if path is found (requires parsing info output)
-             local log_path=$(brew services info ollama 2>/dev/null | awk '/Log files:/ {print $3}')
-             if [[ -n "$log_path" ]]; then
-                 log INFO "Attempting to show Ollama service logs from $log_path:"
-                 # Show last 50 lines, handle potential permission errors
-                 run_diagnostic "sudo tail -n 50 \"$log_path\" || cat \"$log_path\" || echo 'Could not read log file.'"
-             else
-                 log WARN "Could not find Ollama service log path via brew services info."
-             endif
-        else
-            log WARN "brew or brew services not found. Cannot get Ollama service info."
-        endif
+  log INFO "--- Diagnosing Ollama ---"
+  if command -v ollama >/dev/null; then
+    run_diagnostic "ollama list"
+    run_diagnostic "ollama --version"
+    # Check if brew services is available to get service info/logs
+    if command -v brew >/dev/null && command -v brew services >/dev/null; then
+      run_diagnostic "brew services info ollama" # May provide log path
+      # Attempt to show logs if path is found (requires parsing info output)
+      local log_path=$(brew services info ollama 2>/dev/null | awk '/Log files:/ {print $3}')
+      if [[ -n "$log_path" ]]; then
+        log INFO "Attempting to show Ollama service logs from $log_path:"
+        # Show last 50 lines, handle potential permission errors
+        run_diagnostic "sudo tail -n 50 \"$log_path\" || cat \"$log_path\" || echo 'Could not read log file.'"
+      else
+        log WARN "Could not find Ollama service log path via brew services info."
+      fi
     else
-        log WARN "ollama command not found."
-    endif
-    log INFO "-------------------------"
+      log WARN "brew or brew services not found. Cannot get Ollama service info."
+    fi
+  else
+    log WARN "ollama command not found."
+  fi
+  log INFO "-------------------------"
 }
-
 
 # --- Modified on_error trap handler ---
 on_error() {
@@ -213,12 +250,11 @@ on_error() {
 
   # Run general diagnostics (always useful)
   log INFO "--- General System Info ---"
-  if command -v df >/dev/null; then run_diagnostic "df -h"; else log WARN "df not found."; fi # Check disk space
-  if command -v top >/dev/null; then run_diagnostic "top -l 1 | head -n 10"; else log WARN "top not found."; fi # Check process list/load
+  if command -v df >/dev/null; then run_diagnostic "df -h"; else log WARN "df not found."; fi                   # Check disk space
+  if command -v top >/dev/null; then run_diagnostic "top -l 1 | awk 'NR<=10'"; else log WARN "top not found."; fi  # Check process list/load
   # Only run system logs if 'log' command exists AND sudo works (as many useful logs are root-owned)
   if command -v log >/dev/null && check "sudo -n true 2>/dev/null"; then run_diagnostic "sudo log show --last 5m --info --debug --predicate 'process == \"launchd\" || process == \"kernel\"' "; else log WARN "log command or sudo not available for full logs."; fi
   log INFO "---------------------------"
-
 
   # Run section-specific diagnostics based on CURRENT_SECTION
   case "$CURRENT_SECTION" in
@@ -227,44 +263,44 @@ on_error() {
     "Advanced Networking") diag_docker_networking ;;
     "Ollama Setup") diag_ollama ;;
     "Dev Toolchain")
-        log INFO "--- Diagnosing Dev Toolchain (Mise) ---"
-        if command -v mise >/dev/null; then
-            run_diagnostic "mise --version"
-            run_diagnostic "mise ls -g" # List global tools
-            run_diagnostic "mise doctor"
-        else
-            log WARN "mise command not found."
-        fi
-        log INFO "--------------------------------------"
-        ;;
+      log INFO "--- Diagnosing Dev Toolchain (Mise) ---"
+      if command -v mise >/dev/null; then
+        run_diagnostic "mise --version"
+        run_diagnostic "mise ls -g" # List global tools
+        run_diagnostic "mise doctor"
+      else
+        log WARN "mise command not found."
+      fi
+      log INFO "--------------------------------------"
+      ;;
     "Security Config")
-        log INFO "--- Diagnosing Security Config ---"
-        if command -v /usr/libexec/ApplicationFirewall/socketfilterfw >/dev/null; then
-            run_diagnostic "sudo /usr/libexec/ApplicationFirewall/socketfilterfw --getstealthmode"
-        else
-            log WARN "socketfilterfw command not found."
-        fi
-        if [[ -f "/etc/pam.d/sudo" ]]; then
-            log INFO "Checking /etc/pam.d/sudo for pam_tid:"
-            run_diagnostic "grep pam_tid /etc/pam.d/sudo"
-        else
-            log WARN "/etc/pam.d/sudo not found."
-        fi
-        log INFO "----------------------------------"
-        ;;
+      log INFO "--- Diagnosing Security Config ---"
+      if command -v /usr/libexec/ApplicationFirewall/socketfilterfw >/dev/null; then
+        run_diagnostic "sudo /usr/libexec/ApplicationFirewall/socketfilterfw --getstealthmode"
+      else
+        log WARN "socketfilterfw command not found."
+      fi
+      if [[ -f "/etc/pam.d/sudo" ]]; then
+        log INFO "Checking /etc/pam.d/sudo for pam_tid:"
+        run_diagnostic "grep pam_tid /etc/pam.d/sudo"
+      else
+        log WARN "/etc/pam.d/sudo not found."
+      fi
+      log INFO "----------------------------------"
+      ;;
     "YubiKey")
-         log INFO "--- Diagnosing YubiKey/SSH ---"
-         if command -v ssh-keygen >/dev/null; then
-             run_diagnostic "ssh-keygen --version"
-             run_diagnostic "ls -l ~/.ssh/"
-             run_diagnostic "ssh-add -L" # List loaded keys (might require touching key)
-         else
-             log WARN "ssh-keygen command not found."
-         fi
-         log INFO "----------------------------"
-         ;;
+      log INFO "--- Diagnosing YubiKey/SSH ---"
+      if command -v ssh-keygen >/dev/null; then
+        run_diagnostic "ssh-keygen --version"
+        run_diagnostic "ls -l ~/.ssh/"
+        run_diagnostic "ssh-add -L" # List loaded keys (might require touching key)
+      else
+        log WARN "ssh-keygen command not found."
+      fi
+      log INFO "----------------------------"
+      ;;
 
-    * ) log INFO "No specific diagnostics for section '$CURRENT_SECTION'.";; # Default case
+    *) log INFO "No specific diagnostics for section '$CURRENT_SECTION'." ;; # Default case
   esac
 
   log INFO "Diagnostics complete."
@@ -279,10 +315,9 @@ on_error() {
   # further meaningful execution unless specific commands use || true.
 }
 
-
 ### === Section 0: Script Init & Prereqs ===
 CURRENT_SECTION="Script Init"
-log INFO "Starting script: $SCRIPT_NAME (v2.10)"
+log INFO "Starting script: $SCRIPT_NAME (v2.9)"
 
 log INFO "Verifying Xcode Command-Line Tools…"
 if ! check "xcode-select -p &>/dev/null"; then # Use check()
@@ -303,9 +338,8 @@ fi
 # Evaluate brew shellenv in the current script for immediate use using source
 # FIX: Use source /dev/stdin for brew shellenv evaluation
 log INFO "Evaluating Homebrew shell environment..."
-source /dev/stdin <<< "$($(which brew) shellenv)"
+source /dev/stdin <<<"$($(which brew) shellenv)"
 log INFO "Homebrew ready."
-
 
 ### === Section 1: Install Formulae & Casks ===
 CURRENT_SECTION="Brew Install"
@@ -328,7 +362,7 @@ if ! $DRYRUN; then
   # Activate mise in the current script session if not dry running, for immediate use
   # Check if mise is in PATH first, as brew install might not update PATH immediately in current shell
   if ! check "command -v mise &>/dev/null"; then
-      log WARN "Mise command not found in PATH. Activation may fail."
+    log WARN "Mise command not found in PATH. Activation may fail."
   fi
   log INFO "Activating Mise in script session…"
   eval "$(mise activate zsh)" || log WARN "Mise activation failed in script."
@@ -352,13 +386,13 @@ run "grep -qF 'auth\tsufficient\tpam_tid.so' /etc/pam.d/sudo || echo -e 'auth\ts
 ### === Section 5: YubiKey SSH Keygen ===
 CURRENT_SECTION="YubiKey"
 if $enable_yubikey; then # Use lowercase variable name from config
-  log INFO "Attempting to generate YubiKey SSH key…"
-  # Wrapped ssh-keygen in run(), checking exit code manually below run()
-  if check "ssh-keygen -t ed25519-sk -f ~/.ssh/id_ed25519_sk -N '' -O resident 2>/dev/null"; then
-    log INFO "✓ YubiKey SSH key generated"
-  else
-    log WARN "No FIDO2 device found; skipping YubiKey keygen"
-  fi
+  log INFO "Attempting to generate YubiKey SSH key…"
+  # Wrapped ssh-keygen in run(), checking exit code manually below run()
+  if check "ssh-keygen -t ed25519-sk -f ~/.ssh/id_ed25519_sk -N '' -O resident 2>/dev/null"; then
+    log INFO "✓ YubiKey SSH key generated"
+  else
+    log WARN "No FIDO2 device found; skipping YubiKey keygen"
+  fi
 fi
 
 ### === Section 6: LaunchAgents (Battery & Audit) ===
@@ -368,7 +402,7 @@ CURRENT_SECTION="LaunchAgents"
 log INFO "Installing battery alert agent…"
 # Create the script file
 if ! $DRYRUN; then
-cat > ~/Scripts/battAlert.sh <<'EOF_SCRIPT'
+  cat >~/Scripts/battAlert.sh <<'EOF_SCRIPT'
 #!/usr/bin/env zsh
 pct=$(pmset -g batt | awk '/Internal/ {gsub(/;/,""); print $3}')
 (( pct > 85 )) && osascript -e 'display notification "Unplug to preserve battery health" with title "Battery"'
@@ -378,33 +412,43 @@ fi
 run "chmod +x ~/Scripts/battAlert.sh"
 # Create the plist file
 if ! $DRYRUN; then
-cat > ~/Library/LaunchAgents/com.local.battAlert.plist <<'EOF_PLIST' # Corrected filename here
+  cat >~/Library/LaunchAgents/com.local.battAlert.plist <<'EOF_PLIST' # Corrected filename here
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>com.local.battalert</string>
-  <key>ProgramArguments</key><array><string>$HOME/Scripts/battAlert.sh</string></array>
-  <key>StartInterval</key><integer>1800</integer>
-  <key>RunAtLoad</key><true/>
+  <key>Label</key><string>com.local.battalert</string>
+  <key>ProgramArguments</key><array><string>$HOME/Scripts/battAlert.sh</string></array>
+  <key>StartInterval</key><integer>1800</integer>
+  <key>RunAtLoad</key><true/>
 </dict></plist>
 EOF_PLIST
+  # Corrected filename here
+  # Corrected filename here
+  # Corrected filename here
+  # Corrected filename here
+  # Corrected filename here
 fi
 # Use the more robust remove/load -w sequence
-log INFO "Loading agent com.local.battalert…"
-run "launchctl remove com.local.battalert 2>/dev/null || true" # Remove by label
-run "launchctl load -w $HOME/Library/LaunchAgents/com.local.battAlert.plist" # Load by plist path - Corrected filename here
-
+log INFO "Battery alert agent: lint, unload & bootstrap"
+run "plutil -lint $HOME/Library/LaunchAgents/com.local.battAlert.plist"
+run "launchctl list com.local.battalert && \
+    launchctl bootout gui/$(id -u) $HOME/Library/LaunchAgents/com.local.battAlert.plist || true"
+if launchctl bootstrap gui/$(id -u) $HOME/Library/LaunchAgents/com.local.battAlert.plist; then
+  log INFO "Bootstrapped battery alert agent ✔"
+else
+  run "launchctl load -w $HOME/Library/LaunchAgents/com.local.battAlert.plist"
+fi
 
 log INFO "Installing weekly audit agent…"
 # Create the script file
 if ! $DRYRUN; then
-cat > ~/Scripts/weeklyAudit.sh <<'EOF_SCRIPT'
+  cat >~/Scripts/weeklyAudit.sh <<'EOF_SCRIPT'
 #!/usr/bin/env zsh
 if [[ -x "$HOME/Tools/macDeepDive.sh" ]]; then
-  "$HOME/Tools/macDeepDive.sh" > "$HOME/AuditLogs/$(date +%F_%H-%M).txt"
+  "$HOME/Tools/macDeepDive.sh" > "$HOME/AuditLogs/$(date +%F_%H-%M).txt"
 else
-  echo "Error: macDeepDive.sh missing" >&2
-  exit 1
+  echo "Error: macDeepDive.sh missing" >&2
+  exit 1
 fi
 cd "$HOME/AuditLogs"
 [[ ! -d .git ]] && git init
@@ -415,33 +459,47 @@ fi
 run "chmod +x ~/Scripts/weeklyAudit.sh"
 # Create the plist file
 if ! $DRYRUN; then
-cat > ~/Library/LaunchAgents/com.local.weeklyaudit.plist <<'EOF_PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"> # Corrected URL here
-<plist version="1.0"><dict>
-  <key>Label</key><string>com.local.weeklyaudit</string>
-  <key>ProgramArguments</key><array><string>$HOME/Scripts/weeklyAudit.sh</string></array>
-  <key>StartCalendarInterval</key>
-    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer></dict>
-  <key>RunAtLoad</key><true/>
-</dict></plist>
+  cat >"$HOME/Library/LaunchAgents/com.local.weeklyaudit.plist" <<'EOF_PLIST'
+  <?xml version="1.0" encoding="UTF-8"?>
+  <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+  <plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.local.weeklyaudit</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>$HOME/Scripts/weeklyAudit.sh</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+      <key>Weekday</key><integer>1</integer>
+      <key>Hour</key><integer>9</integer>
+    </dict>
+    <key>RunAtLoad</key><true/>
+  </dict>
+  </plist>
 EOF_PLIST
 fi
 # Use the more robust remove/load -w sequence
 log INFO "Loading agent com.local.weeklyaudit…"
-run "launchctl remove com.local.weeklyaudit 2>/dev/null || true" # Remove by label
-run "launchctl load -w $HOME/Library/LaunchAgents/com.local.weeklyaudit.plist" # Load by plist path
-
 
 ### === Section 7: Local AI Lab (Ollama) === # <-- Renumbered from 6
 CURRENT_SECTION="Ollama Setup"
 if $install_ollama; then # Use lowercase variable name
-  log INFO "Installing Ollama & pulling Mistral model…"
-  run "brew install ollama"
-  run "brew services start ollama || true"
-  run "ollama pull mistral:7b || true"
+  log INFO "Installing Ollama & pulling Mistral model…"
+  run "brew install ollama"
+  run "brew services start ollama || true"
+  run "ollama pull mistral:7b || true"
 fi
 
+# Weekly audit agent: lint, unload any existing, then bootstrap (or fallback to load)
+run "plutil -lint $HOME/Library/LaunchAgents/com.local.weeklyaudit.plist"
+run "launchctl list com.local.weeklyaudit && launchctl bootout gui/$(id -u) $HOME/Library/LaunchAgents/com.local.weeklyaudit.plist || true"
+if launchctl bootstrap gui/$(id -u) $HOME/Library/LaunchAgents/com.local.weeklyaudit.plist; then
+  log INFO "Bootstrapped weekly audit agent ✔"
+else
+  run "launchctl load -w $HOME/Library/LaunchAgents/com.local.weeklyaudit.plist"
+fi
 ### === Section 8: Advanced Networking (DoH + Pi-hole) === # <-- Renumbered from 7
 CURRENT_SECTION="Advanced Networking"
 
@@ -450,132 +508,184 @@ log INFO "Configuring passwordless sudo for networksetup…"
 # Check if passwordless sudo is configured before running sudo -v,
 # to avoid unnecessary password prompt if already configured.
 if ! check "sudo -n true 2>/dev/null"; then # Use check()
-  log INFO "(Prompting for sudo password to cache it for this script run)"
-  sudo -v # This will prompt for password if needed and cache it
+  log INFO "(Prompting for sudo password to cache it for this script run)"
+  sudo -v # This will prompt for password if needed and cache it
 fi
 SUDOERS="/etc/sudoers.d/nextlevel-network"
 # Check if the rule *exactly* matches before attempting to write
 if ! sudo grep -qF "$USER ALL=(root) NOPASSWD: /usr/sbin/networksetup -setdnsservers *" $SUDOERS 2>/dev/null; then
-  log INFO "Configuring passwordless sudo rule in $SUDOERS…"
-  sudo mkdir -p /etc/sudoers.d
-  sudo chmod 0755 /etc/sudoers.d
-  sudo tee $SUDOERS >/dev/null <<EOF_SUDO
+  log INFO "Configuring passwordless sudo rule in $SUDOERS…"
+  sudo mkdir -p /etc/sudoers.d
+  sudo chmod 0755 /etc/sudoers.d
+  sudo tee $SUDOERS >/dev/null <<EOF_SUDO
 # Allow user '$USER' to run networksetup without password
 $USER ALL=(root) NOPASSWD: /usr/sbin/networksetup -setdnsservers *
 EOF_SUDO
-  sudo chmod 440 $SUDOERS
-  log INFO "✓ Passwordless sudo rule created"
+  sudo chmod 440 $SUDOERS
+  log INFO "✓ Passwordless sudo rule created"
 else
-  log INFO "→ Passwordless sudo rule already exists in $SUDOERS"
+  log INFO "→ Passwordless sudo rule already exists in $SUDOERS"
 fi
 
-# 2) Detect currently active service via networksetup -getcurrentnetworkservice
-log INFO "Detecting active network service…"
-# FIX: Use the simpler and more reliable command
-PRIMARY_SERVICE=$(networksetup -getcurrentnetworkservice)
+# 2) Detect currently active service via route and networksetup
+log INFO "Detecting active network service..."
+PRIMARY_INTERFACE=$(route -n get default | awk '/interface:/ {print $2}') # Get default route interface (e.g., en0)
 
-# networksetup -getcurrentnetworkservice might return error messages if no service is active
-if [[ "$PRIMARY_SERVICE" == *"Could not find"* || "$PRIMARY_SERVICE" == *"not recognized"* || -z "$PRIMARY_SERVICE" ]]; then
-  log ERROR "Could not detect active service; skipping Advanced Networking setup"; INSTALL_PIHOLE=false; INSTALL_DOH=false
+if [[ -z "$PRIMARY_INTERFACE" ]]; then
+  log ERROR "Could not determine default network interface. Skipping DNS setup."
+  install_pihole=false # Use lowercase variable
+  install_doh=false    # Use lowercase variable
 else
-  log INFO "Active service: '$PRIMARY_SERVICE'" # Quote the service name in log
+  log INFO "Default network interface: '$PRIMARY_INTERFACE'"
+  # Find the Service Name associated with this interface device
+  # Use grep -B1 to get the line *before* the matching Device line, which contains the service name
+  PRIMARY_SERVICE=$(networksetup -listnetworkserviceorder | grep -B1 "Device: $PRIMARY_INTERFACE)" | awk -F'[()]' '/\(/ {print $2}')
+
+  if [[ -z "$PRIMARY_SERVICE" ]]; then
+    log ERROR "Could not find network service name for interface '$PRIMARY_INTERFACE'. Skipping DNS setup."
+    install_pihole=false # Use lowercase variable
+    install_doh=false    # Use lowercase variable
+  else
+    log INFO "Active service for interface '$PRIMARY_INTERFACE' is '$PRIMARY_SERVICE'"
+  fi
 fi
 
+if [[ -z "$PRIMARY_SERVICE" ]]; then
+  log ERROR "Could not detect active service for ID '$PRIMARY_SERVICE_ID'; skipping DNS setup"
+  install_pihole=false install_doh=false
+else
+  log INFO "Active service: '$PRIMARY_SERVICE'"
+fi
 
 # 3) Get Colima VM IP
-VM_IP=$(check "colima status --json | jq -r '.ip_address'")
+# Use direct command substitution and check result; check function suppresses errors we might want to see
+VM_IP=$(colima status --json | jq -r '.address' 2>/dev/null) # Updated key based on potential colima output variation
 if [[ -z "$VM_IP" || "$VM_IP" == "null" ]]; then
-  log ERROR "No Colima VM IP; skipping Pi-hole/DoH"
-  INSTALL_PIHOLE=false INSTALL_DOH=false
+  # Fallback attempt if '.address' doesn't exist
+  VM_IP=$(colima status --json | jq -r '.ipAddress' 2>/dev/null) # Check another common key
+  if [[ -z "$VM_IP" || "$VM_IP" == "null" ]]; then
+     log ERROR "Could not get Colima VM IP address; skipping Pi-hole/DoH setup."
+     install_pihole=false # Use lowercase variable
+     install_doh=false    # Use lowercase variable
+  else
+     log INFO "Colima VM IP: $VM_IP (using .ipAddress)"
+     run "sleep 3" # Give Colima a moment
+  fi
 else
-  log INFO "Colima VM IP: $VM_IP"
-  run "sleep 3" # Give Colima a moment to ensure networking is fully stable
+  log INFO "Colima VM IP: $VM_IP (using .address)"
+  run "sleep 3" # Give Colima a moment
 fi
 
 # Check if either Pihole or DoH is still enabled after checks
 if ! $install_pihole && ! $install_doh; then # Use lowercase config variables
-  log INFO "Skipping Pi-hole and DoH deployment due to earlier checks."
-  # Skip the rest of Section 8
-else # At least one is still enabled
-  log INFO "Proceeding with DNS setup." # Log that we are proceeding
+  log INFO "Skipping Pi-hole and DoH deployment due to earlier checks."
+  # Skip the rest of Section 8
+else                                    # At least one is still enabled
+  log INFO "Proceeding with DNS setup." # Log that we are proceeding
 fi
-
 
 # 4) Deploy Cloudflared DoH (if enabled and VM_IP available)
 if $install_doh; then # Use lowercase variable
-  log INFO "Deploying Cloudflared DoH on $VM_IP:5053…"
-  # cloudflared is installed in Section 1
-  if ! $DRYRUN; then
-  cat > ~/Library/LaunchAgents/com.local.doh.plist <<'EOF_PLIST'
+  log INFO "Deploying Cloudflared DoH on $VM_IP:5053…"
+  # cloudflared should be installed in Section 1
+
+  # Ensure cloudflared binary path is correct (use brew --prefix)
+  CLOUDFLARED_BIN="$(brew --prefix)/bin/cloudflared"
+  if [[ ! -x "$CLOUDFLARED_BIN" ]]; then
+      log ERROR "cloudflared binary not found or not executable at $CLOUDFLARED_BIN. Cannot create DoH agent."
+      install_doh=false # Skip loading if binary is missing
+  else
+      log INFO "Using cloudflared binary at: $CLOUDFLARED_BIN"
+      if ! $DRYRUN; then
+        # *** CORRECTED PLIST CONTENT HERE ***
+        cat >"$HOME/Library/LaunchAgents/com.local.doh.plist" <<EOF_PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.local.doh</string>
-  <key>ProgramArguments</key>
-    <array>
-      <string>$(which cloudflared)</string>
-      <string>proxy-dns</string>
-      <string>--address</string><string>${VM_IP}</string> # Make it listen on VM IP
-      <string>--port</string><string>5053</string>       # On the host
-      <string>--upstream</string><string>https://1.1.1.1/dns-query</string>
-    </array>
-  <key>KeepAlive</key><true/>
-  <key>RunAtLoad</key><true/>
-</dict></plist>
+    <key>Label</key>
+    <string>com.local.doh</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${CLOUDFLARED_BIN}</string>
+        <string>proxy-dns</string>
+        <string>--address</string>
+        <string>${VM_IP}</string> <string>--port</string>
+        <string>5053</string>
+        <string>--upstream</string>
+        <string>https://1.1.1.1/dns-query</string>
+        <string>--upstream</string>
+        <string>https://1.0.0.1/dns-query</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>$HOME/Library/Logs/com.local.doh.log</string>
+    <key>StandardErrorPath</key>
+    <string>$HOME/Library/Logs/com.local.doh.log</string>
+</dict>
+</plist>
 EOF_PLIST
-  endif
-  # Use the more robust remove/load -w sequence
-  log INFO "Loading agent com.local.doh…"
-  run "launchctl remove com.local.doh 2>/dev/null || true" # Remove by label
-  run "launchctl load -w $HOME/Library/LaunchAgents/com.local.doh.plist" # Load by plist path
+      fi # End if not DRYRUN
 
- fi
+      # Lint and load the DoH agent
+      log INFO "DoH agent: lint, unload & bootstrap"
+      run "plutil -lint $HOME/Library/LaunchAgents/com.local.doh.plist"
+      run "launchctl list com.local.doh && launchctl bootout gui/$(id -u) $HOME/Library/LaunchAgents/com.local.doh.plist || true"
+      if launchctl bootstrap gui/$(id -u) $HOME/Library/LaunchAgents/com.local.doh.plist; then
+          log INFO "Bootstrapped DoH agent ✔"
+      else
+          run "launchctl load -w $HOME/Library/LaunchAgents/com.local.doh.plist" # Fallback
+      fi
+  fi # End check for CLOUDFLARED_BIN
+fi # End if $install_doh
 
 # 5) Deploy Pi-hole, binding DNS to VM_IP and web UI to localhost
 if $install_pihole; then # Use lowercase variable
-  log INFO "Deploying Pi-hole container…"
+  log INFO "Deploying Pi-hole container…"
 
-  # Remove any existing pihole container
-  run "docker rm -f pihole || true"
+  # Remove any existing pihole container
+  run "docker rm -f pihole || true"
 
-  # Deploy Pi-hole, binding port 53 to the VM's IP address, port 80 to host localhost
-  # This bypasses internal VM conflicts (like systemd-resolved)
-  # Pre-configure Pi-hole upstream to the Cloudflared proxy via env var
-  log INFO "Running docker container 'pihole' binding to ${VM_IP}:53 and 127.0.0.1:80"
-  run "docker run -d --name pihole \
-    -p $VM_IP:53:53/tcp -p $VM_IP:53:53/udp \
-    -p 127.0.0.1:80:80 \
-    --restart unless-stopped \
-    -v pihole_data:/etc/pihole \
-    -e TZ=$(date +%Z) \
-    -e WEBPASSWORD='set_me' \
-    -e DNS1=$VM_IP#5053 \
-    pihole/pihole:latest"
+  # Deploy Pi-hole, binding port 53 to the VM's IP address, port 80 to host localhost
+  # This bypasses internal VM conflicts (like systemd-resolved)
+  # Pre-configure Pi-hole upstream to the Cloudflared proxy via env var
+  log INFO "Running docker container 'pihole' binding to ${VM_IP}:53 and 127.0.0.1:80"
+  run "docker run -d --name pihole \
+    -p $VM_IP:53:53/tcp -p $VM_IP:53:53/udp \
+    -p 127.0.0.1:80:80 \
+    --restart unless-stopped \
+    -v pihole_data:/etc/pihole \
+    -e TZ=$(date +%Z) \
+    -e WEBPASSWORD='set_me' \
+    -e DNS1=$VM_IP#5053 \
+    pihole/pihole:latest"
 
-  log INFO "✓ Pi-hole bound to ${VM_IP}:53 with DoH upstream"
+  log INFO "✓ Pi-hole bound to ${VM_IP}:53 with DoH upstream"
 
-  # --- Important Manual Step 1: Verify Pi-hole Setup & Password ---
-  # This step is pre-configured by the DNS1 env var above, but manual check/change is good
-  log INFO "Please VERIFY Pi-hole setup and CHANGE DEFAULT PASSWORD:"
-  log INFO "1. Access Pi-hole web UI at http://127.0.0.1/admin" # Use 127.0.0.1 because port 80 is mapped there
-  log INFO "2. Log in (default password is 'set_me', CHANGE THIS IMMEDIATELY!)"
-  log INFO "3. Go to Settings -> DNS. Verify 'Custom 1 (IPv4)' is ${VM_IP}#5053 and checked."
+  # --- Important Manual Step 1: Verify Pi-hole Setup & Password ---
+  # This step is pre-configured by the DNS1 env var above, but manual check/change is good
+  log INFO "Please VERIFY Pi-hole setup and CHANGE DEFAULT PASSWORD:"
+  log INFO "1. Access Pi-hole web UI at http://127.0.0.1/admin" # Use 127.0.0.1 because port 80 is mapped there
+  log INFO "2. Log in (default password is 'set_me', CHANGE THIS IMMEDIATELY!)"
+  log INFO "3. Go to Settings -> DNS. Verify 'Custom 1 (IPv4)' is ${VM_IP}#5053 and checked."
 
+  # Set macOS DNS to point to Pi-hole (automated via passwordless sudo)
+  log INFO "Updating macOS DNS to Pi-hole at $VM_IP for service '$PRIMARY_SERVICE'…"
+  run "sudo networksetup -setdnsservers \"$PRIMARY_SERVICE\" $VM_IP"
+  # Flush DNS caches to make the change take effect immediately
+  run "dscacheutil -flushcache && sudo killall -HUP mDNSResponder || true"
+  log INFO "✓ macOS DNS set to Pi-hole ($VM_IP) and caches flushed."
 
-  # Set macOS DNS to point to Pi-hole (automated via passwordless sudo)
-  log INFO "Updating macOS DNS to Pi-hole at $VM_IP for service '$PRIMARY_SERVICE'…"
-  run "sudo networksetup -setdnsservers \"$PRIMARY_SERVICE\" $VM_IP"
-  # Flush DNS caches to make the change take effect immediately
-  run "dscacheutil -flushcache && sudo killall -HUP mDNSResponder || true"
-  log INFO "✓ macOS DNS set to Pi-hole ($VM_IP) and caches flushed."
-
- fi
+fi
 
 ### === Section 9: Launch NordVPN === # <-- Renumbered from 8
 CURRENT_SECTION="NordVPN Launch"
 if $enable_nord; then # Use lowercase variable
-  log INFO "Launching NordVPN GUI…"; run "open -a NordVPN || true"
+  log INFO "Launching NordVPN GUI…"
+  run "open -a NordVPN || true"
 fi
 
 ### === Section 10: Prune Logitech ===
@@ -584,8 +694,8 @@ log INFO "Pruning Logitech agents…"
 # These setopt/unsetopt must run directly in the script's shell
 setopt nullglob
 for p in /Library/LaunchAgents/com.logi.*; do
-  run "sudo launchctl bootout system \"$p\" || true" # Use run()
-  run "sudo rm -f \"$p\"" # Use run()
+  run "sudo launchctl bootout system \"$p\" || true" # Use run()
+  run "sudo rm -f \"$p\""                            # Use run()
 done
 unsetopt nullglob
 
@@ -594,17 +704,17 @@ CURRENT_SECTION="Health Check"
 log INFO "----- Health Check -----"
 
 # Check 1: ARM-only process
-if check "sysctl -n sysctl.proc_translated &>/dev/null" && (( $(sysctl -n sysctl.proc_translated) == 0 )); then # Check exists first
-  CHECK_ARM="ARM-only process ✔"
+if check "sysctl -n sysctl.proc_translated &>/dev/null" && (($(sysctl -n sysctl.proc_translated) == 0)); then # Check exists first
+  CHECK_ARM="ARM-only process ✔"
 else
-  CHECK_ARM="Rosetta active ❌"
+  CHECK_ARM="Rosetta active ❌"
 fi
 
 # Check 2: Ollama running (accessible via localhost:11434)
 if check "curl -s --max-time 5 http://localhost:11434/v1/models &>/dev/null" && check "curl -s --max-time 5 http://localhost:11434/v1/models 2>/dev/null | grep -q mistral"; then # Check endpoint is up AND Mistral exists
-  CHECK_OLLAMA="Ollama Mistral running ✔"
+  CHECK_OLLAMA="Ollama Mistral running ✔"
 else
-  CHECK_OLLAMA="Ollama down or no Mistral model ❌"
+  CHECK_OLLAMA="Ollama down or no Mistral model ❌"
 fi
 
 # Check 3: Local DNS filtering configured (pointing to 127.0.0.1 or VM_IP)
@@ -612,34 +722,32 @@ fi
 # Check specifically for the VM IP set by Pi-hole in the scutil --dns output
 # Increased robustness of the grep pattern and checks
 if check "scutil --dns &>/dev/null" && scutil --dns | grep 'nameserver' | grep -qE "(^|\s)${VM_IP}(\s|$)" &>/dev/null; then # Check specifically for VM_IP set by Pi-hole
-  CHECK_DNS="DNS pointing to Pi-hole ($VM_IP) ✔"
+  CHECK_DNS="DNS pointing to Pi-hole ($VM_IP) ✔"
 elif check "scutil --dns &>/dev/null" && scutil --dns | grep 'nameserver' | grep -qE '(^|\s)127\.0\.0\.1(:\d+)?(\s|$)' &>/dev/null; then # Check if it's pointing to localhost (DoH only)
-  CHECK_DNS="DNS pointing to localhost DoH ✔"
+  CHECK_DNS="DNS pointing to localhost DoH ✔"
 else
-  # Fallback if neither specific check passes
-  CHECK_DNS="DNS not local ❌"
+  # Fallback if neither specific check passes
+  CHECK_DNS="DNS not local ❌"
 fi
-
 
 # Check 4: LaunchAgents loaded (check by listing label)
 if check "launchctl list com.local.battalert &>/dev/null"; then
-  CHECK_BATTERY="Agent com.local.battalert loaded ✔"
+  CHECK_BATTERY="Agent com.local.battalert loaded ✔"
 else
-  CHECK_BATTERY="Agent com.local.battalert missing ❌"
+  CHECK_BATTERY="Agent com.local.battalert missing ❌"
 fi
 
 if check "launchctl list com.local.weeklyaudit &>/dev/null"; then
-  CHECK_WEEKLY="Agent com.local.weeklyaudit loaded ✔"
+  CHECK_WEEKLY="Agent com.local.weeklyaudit loaded ✔"
 else
-  CHECK_WEEKLY="Agent com.local.weeklyaudit missing ❌"
-endif
+  CHECK_WEEKLY="Agent com.local.weeklyaudit missing ❌"
+fi
 
 if check "launchctl list com.local.doh &>/dev/null"; then
-  CHECK_DOH="Agent com.local.doh loaded ($VM_IP:5053) ✔"
+  CHECK_DOH="Agent com.local.doh loaded ($VM_IP:5053) ✔"
 else
-  CHECK_DOH="Agent com.local.doh missing ❌"
-endif
-
+  CHECK_DOH="Agent com.local.doh missing ❌"
+fi
 
 # --- Print Final Summary ---
 log INFO "----- Health Check Summary -----"
@@ -650,7 +758,7 @@ log INFO "$CHECK_BATTERY"
 log INFO "$CHECK_WEEKLY"
 # Only print DoH check result if its installation was attempted
 if $install_doh; then # Use lowercase variable
-  log INFO "$CHECK_DOH"
+  log INFO "$CHECK_DOH"
 fi
 log INFO "--------------------------"
 

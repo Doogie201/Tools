@@ -1,17 +1,17 @@
-[0;34m[2025-05-05T04:19:51] [INFO] Starting script: nextLevel3.sh (v2.9)[0m
-[0;34m[2025-05-05T04:19:51] [INFO] Verifying Xcode Command-Line Tools…[0m
-[0;34m[2025-05-05T04:19:51] [INFO] Checking: xcode-select -p &>/dev/null[0m
-[0;34m[2025-05-05T04:19:51] [INFO] Bootstrapping Homebrew…[0m
-[0;34m[2025-05-05T04:19:51] [INFO] Checking: command -v brew &>/dev/null[0m
-[0;34m[2025-05-05T04:19:51] [INFO] Checking: brew --version &>/dev/null[0m
-[0;34m[2025-05-05T04:19:51] [INFO] Checking: [[ -d /opt/homebrew ]][0m
-[0;34m[2025-05-05T04:19:51] [INFO] Evaluating Homebrew shell environment...[0m
-[0;34m[2025-05-05T04:19:51] [INFO] Homebrew ready.[0m
-[0;34m[2025-05-05T04:19:51] [INFO] Installing brew formulae…[0m
-[0;34m[2025-05-05T04:19:51] [INFO] ▶ brew update[0m
+[0;34m[2025-05-05T12:16:07] [INFO] Starting script: nextLevel3.sh (v2.9)[0m
+[0;34m[2025-05-05T12:16:07] [INFO] Verifying Xcode Command-Line Tools…[0m
+[0;34m[2025-05-05T12:16:07] [INFO] Checking: xcode-select -p &>/dev/null[0m
+[0;34m[2025-05-05T12:16:07] [INFO] Bootstrapping Homebrew…[0m
+[0;34m[2025-05-05T12:16:07] [INFO] Checking: command -v brew &>/dev/null[0m
+[0;34m[2025-05-05T12:16:07] [INFO] Checking: brew --version &>/dev/null[0m
+[0;34m[2025-05-05T12:16:07] [INFO] Checking: [[ -d /opt/homebrew ]][0m
+[0;34m[2025-05-05T12:16:07] [INFO] Evaluating Homebrew shell environment...[0m
+[0;34m[2025-05-05T12:16:07] [INFO] Homebrew ready.[0m
+[0;34m[2025-05-05T12:16:07] [INFO] Installing brew formulae…[0m
+[0;34m[2025-05-05T12:16:07] [INFO] ▶ brew update[0m
 ==> Updating Homebrew...
 Already up-to-date.
-[0;34m[2025-05-05T04:19:54] [INFO] ▶ brew install mise colima docker docker-buildx docker-compose cloudflared jq[0m
+[0;34m[2025-05-05T12:16:10] [INFO] ▶ brew install mise colima docker docker-buildx docker-compose cloudflared jq[0m
 Warning: Treating docker as a formula. For the cask, use homebrew/cask/docker or specify the `--cask` flag. To silence this message, use the `--formula` flag.
 Warning: mise 2025.5.0 is already installed and up-to-date.
 To reinstall 2025.5.0, run:
@@ -34,11 +34,10 @@ To reinstall 2025.4.2, run:
 Warning: jq 1.7.1 is already installed and up-to-date.
 To reinstall 1.7.1, run:
   brew reinstall jq
-[0;34m[2025-05-05T04:19:55] [INFO] Installing brew casks…[0m
-[0;34m[2025-05-05T04:19:55] [INFO] ▶ brew install --cask volta macs-fan-control raycast warp rectangle-pro betterdisplay hummingbird yubico-yubikey-manager yubico-authenticator knockknock blockblock nordvpn[0m
+[0;34m[2025-05-05T12:16:11] [INFO] Installing brew casks…[0m
+[0;34m[2025-05-05T12:16:11] [INFO] ▶ brew install --cask volta macs-fan-control raycast warp rectangle-pro betterdisplay hummingbird yubico-yubikey-manager yubico-authenticator knockknock blockblock nordvpn[0m
 Warning: Not upgrading volta, the latest version is already installed
 Warning: Not upgrading macs-fan-control, the latest version is already installed
-Warning: Not upgrading raycast, the latest version is already installed
 Warning: Not upgrading warp, the latest version is already installed
 Warning: Not upgrading rectangle-pro, the latest version is already installed
 Warning: Not upgrading betterdisplay, the latest version is already installed
@@ -48,30 +47,40 @@ Warning: Not upgrading yubico-authenticator, the latest version is already insta
 Warning: Not upgrading knockknock, the latest version is already installed
 Warning: Not upgrading blockblock, the latest version is already installed
 Warning: Not upgrading nordvpn, the latest version is already installed
-[0;34m[2025-05-05T04:19:56] [INFO] Configuring Mise…[0m
-[0;34m[2025-05-05T04:19:56] [INFO] ▶ grep -q 'mise activate' ~/.zshrc || echo 'eval "$(mise activate zsh)"' >> ~/.zshrc[0m
-[0;34m[2025-05-05T04:19:56] [INFO] Checking: command -v mise &>/dev/null[0m
-[0;34m[2025-05-05T04:19:56] [INFO] Activating Mise in script session…[0m
-[0;34m[2025-05-05T04:19:56] [INFO] ▶ mise use -g node@lts python@3.12 rust@stable go@1.22[0m
+==> Upgrading 1 outdated package:
+raycast 1.97.0 -> 1.97.1
+==> Upgrading raycast
+==> Downloading https://releases.raycast.com/releases/1.97.1/download?build=arm
+==> Downloading from https://raycast-releases.9a8adc978cc22e82f2df4dd5f45c4ef2.r2.cloudflarestorage.com/Raycast_v1.97.1_b1108ae104301cb8642d76e61cc8ebabf5a9e662_arm.dmg?response-content-disposition=attachment%3B%20filename%3D%22Raycast.dmg%22&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=b3c053179dd07241f8271dbe9002b57e%2F20250505%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20250505T161612Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=6927fe732a6391bba9ac4df9120353a8de48d1d227932730632d0c57c5d982cf
+==> Backing App 'Raycast.app' up to '/opt/homebrew/Caskroom/raycast/1.97.0/Raycast.app'
+==> Removing App '/Applications/Raycast.app'
+==> Moving App 'Raycast.app' to '/Applications/Raycast.app'
+==> Purging files for version 1.97.0 of Cask raycast
+🍺  raycast was successfully upgraded!
+[0;34m[2025-05-05T12:16:22] [INFO] Configuring Mise…[0m
+[0;34m[2025-05-05T12:16:22] [INFO] ▶ grep -q 'mise activate' ~/.zshrc || echo 'eval "$(mise activate zsh)"' >> ~/.zshrc[0m
+[0;34m[2025-05-05T12:16:22] [INFO] Checking: command -v mise &>/dev/null[0m
+[0;34m[2025-05-05T12:16:22] [INFO] Activating Mise in script session…[0m
+[0;34m[2025-05-05T12:16:22] [INFO] ▶ mise use -g node@lts python@3.12 rust@stable go@1.22[0m
 mise ~/.config/mise/config.toml tools: go@1.22.12, rust@stable, python@3.12.10, node@22.15.0
-[0;34m[2025-05-05T04:19:56] [INFO] Starting Colima VM…[0m
-[0;34m[2025-05-05T04:19:56] [INFO] ▶ colima start --arch aarch64 --vm-type vz --vz-rosetta || true[0m
-time="2025-05-05T04:19:57-04:00" level=warning msg="already running, ignoring"
-[0;34m[2025-05-05T04:19:57] [INFO] Adding low-power aliases…[0m
-[0;34m[2025-05-05T04:19:57] [INFO] ▶ grep -q lpm-on ~/.zshrc || echo 'alias lpm-on="sudo powermetrics -q --lowpowermode on"' >> ~/.zshrc[0m
-[0;34m[2025-05-05T04:19:57] [INFO] ▶ grep -q lpm-off ~/.zshrc || echo 'alias lpm-off="sudo powermetrics -q --lowpowermode off"' >> ~/.zshrc[0m
-[0;34m[2025-05-05T04:19:57] [INFO] Configuring macOS Firewall & TouchID for sudo…[0m
-[0;34m[2025-05-05T04:19:57] [INFO] ▶ sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on[0m
-[0;34m[2025-05-05T04:20:10] [INFO] ▶ grep -qF 'auth\tsufficient\tpam_tid.so' /etc/pam.d/sudo || echo -e 'auth\tsufficient\tpam_tid.so' | sudo tee -a /etc/pam.d/sudo >/dev/null[0m
-[0;34m[2025-05-05T04:20:10] [INFO] Attempting to generate YubiKey SSH key…[0m
-[0;34m[2025-05-05T04:20:10] [INFO] Checking: ssh-keygen -t ed25519-sk -f ~/.ssh/id_ed25519_sk -N '' -O resident 2>/dev/null[0m
-[0;33m[2025-05-05T04:20:10] [WARN] No FIDO2 device found; skipping YubiKey keygen[0m
-[0;34m[2025-05-05T04:20:10] [INFO] Installing battery alert agent…[0m
-[0;34m[2025-05-05T04:20:10] [INFO] ▶ chmod +x ~/Scripts/battAlert.sh[0m
-[0;34m[2025-05-05T04:20:10] [INFO] Battery alert agent: lint, unload & bootstrap[0m
-[0;34m[2025-05-05T04:20:10] [INFO] ▶ plutil -lint /Users/marcussmith/Library/LaunchAgents/com.local.battAlert.plist[0m
+[0;34m[2025-05-05T12:16:22] [INFO] Starting Colima VM…[0m
+[0;34m[2025-05-05T12:16:22] [INFO] ▶ colima start --arch aarch64 --vm-type vz --vz-rosetta || true[0m
+time="2025-05-05T12:16:23-04:00" level=warning msg="already running, ignoring"
+[0;34m[2025-05-05T12:16:23] [INFO] Adding low-power aliases…[0m
+[0;34m[2025-05-05T12:16:23] [INFO] ▶ grep -q lpm-on ~/.zshrc || echo 'alias lpm-on="sudo powermetrics -q --lowpowermode on"' >> ~/.zshrc[0m
+[0;34m[2025-05-05T12:16:23] [INFO] ▶ grep -q lpm-off ~/.zshrc || echo 'alias lpm-off="sudo powermetrics -q --lowpowermode off"' >> ~/.zshrc[0m
+[0;34m[2025-05-05T12:16:23] [INFO] Configuring macOS Firewall & TouchID for sudo…[0m
+[0;34m[2025-05-05T12:16:23] [INFO] ▶ sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on[0m
+[0;34m[2025-05-05T12:16:35] [INFO] ▶ grep -qF 'auth\tsufficient\tpam_tid.so' /etc/pam.d/sudo || echo -e 'auth\tsufficient\tpam_tid.so' | sudo tee -a /etc/pam.d/sudo >/dev/null[0m
+[0;34m[2025-05-05T12:16:35] [INFO] Attempting to generate YubiKey SSH key…[0m
+[0;34m[2025-05-05T12:16:35] [INFO] Checking: ssh-keygen -t ed25519-sk -f ~/.ssh/id_ed25519_sk -N '' -O resident 2>/dev/null[0m
+[0;33m[2025-05-05T12:16:35] [WARN] No FIDO2 device found; skipping YubiKey keygen[0m
+[0;34m[2025-05-05T12:16:35] [INFO] Installing battery alert agent…[0m
+[0;34m[2025-05-05T12:16:35] [INFO] ▶ chmod +x ~/Scripts/battAlert.sh[0m
+[0;34m[2025-05-05T12:16:35] [INFO] Battery alert agent: lint, unload & bootstrap[0m
+[0;34m[2025-05-05T12:16:35] [INFO] ▶ plutil -lint /Users/marcussmith/Library/LaunchAgents/com.local.battAlert.plist[0m
 /Users/marcussmith/Library/LaunchAgents/com.local.battAlert.plist: OK
-[0;34m[2025-05-05T04:20:10] [INFO] ▶ launchctl list com.local.battalert &&     launchctl bootout gui/501 /Users/marcussmith/Library/LaunchAgents/com.local.battAlert.plist || true[0m
+[0;34m[2025-05-05T12:16:35] [INFO] ▶ launchctl list com.local.battalert &&     launchctl bootout gui/501 /Users/marcussmith/Library/LaunchAgents/com.local.battAlert.plist || true[0m
 {
 	"LimitLoadToSessionType" = "Aqua";
 	"Label" = "com.local.battalert";
@@ -82,19 +91,19 @@ time="2025-05-05T04:19:57-04:00" level=warning msg="already running, ignoring"
 		"$HOME/Scripts/battAlert.sh";
 	);
 };
-[0;34m[2025-05-05T04:20:10] [INFO] Bootstrapped battery alert agent ✔[0m
-[0;34m[2025-05-05T04:20:10] [INFO] Installing weekly audit agent…[0m
-[0;34m[2025-05-05T04:20:10] [INFO] ▶ chmod +x ~/Scripts/weeklyAudit.sh[0m
-[0;34m[2025-05-05T04:20:10] [INFO] Loading agent com.local.weeklyaudit…[0m
-[0;34m[2025-05-05T04:20:10] [INFO] Installing Ollama & pulling Mistral model…[0m
-[0;34m[2025-05-05T04:20:10] [INFO] ▶ brew install ollama[0m
+[0;34m[2025-05-05T12:16:36] [INFO] Bootstrapped battery alert agent ✔[0m
+[0;34m[2025-05-05T12:16:36] [INFO] Installing weekly audit agent…[0m
+[0;34m[2025-05-05T12:16:36] [INFO] ▶ chmod +x ~/Scripts/weeklyAudit.sh[0m
+[0;34m[2025-05-05T12:16:36] [INFO] Loading agent com.local.weeklyaudit…[0m
+[0;34m[2025-05-05T12:16:36] [INFO] Installing Ollama & pulling Mistral model…[0m
+[0;34m[2025-05-05T12:16:36] [INFO] ▶ brew install ollama[0m
 Warning: Treating ollama as a formula. For the cask, use homebrew/cask/ollama or specify the `--cask` flag. To silence this message, use the `--formula` flag.
 Warning: ollama 0.6.7 is already installed and up-to-date.
 To reinstall 0.6.7, run:
   brew reinstall ollama
-[0;34m[2025-05-05T04:20:11] [INFO] ▶ brew services start ollama || true[0m
+[0;34m[2025-05-05T12:16:37] [INFO] ▶ brew services start ollama || true[0m
 Service `ollama` already started, use `brew services restart ollama` to restart.
-[0;34m[2025-05-05T04:20:12] [INFO] ▶ ollama pull mistral:7b || true[0m
+[0;34m[2025-05-05T12:16:37] [INFO] ▶ ollama pull mistral:7b || true[0m
 [?2026h[?25l[1Gpulling manifest ⠋ [K[?25h[?2026l[?2026h[?25l[1Gpulling manifest ⠙ [K[?25h[?2026l[?2026h[?25l[1Gpulling manifest ⠹ [K[?25h[?2026l[?2026h[?25l[1Gpulling manifest ⠸ [K[?25h[?2026l[?2026h[?25l[1Gpulling manifest [K
 pulling ff82381e2bea: 100% ▕██████████████████▏ 4.1 GB                         [K
 pulling 43070e2d4e53: 100% ▕██████████████████▏  11 KB                         [K
@@ -104,9 +113,9 @@ pulling 42347cd80dc8: 100% ▕████████████████�
 verifying sha256 digest [K
 writing manifest [K
 success [K[?25h[?2026l
-[0;34m[2025-05-05T04:20:12] [INFO] ▶ plutil -lint /Users/marcussmith/Library/LaunchAgents/com.local.weeklyaudit.plist[0m
+[0;34m[2025-05-05T12:16:38] [INFO] ▶ plutil -lint /Users/marcussmith/Library/LaunchAgents/com.local.weeklyaudit.plist[0m
 /Users/marcussmith/Library/LaunchAgents/com.local.weeklyaudit.plist: OK
-[0;34m[2025-05-05T04:20:12] [INFO] ▶ launchctl list com.local.weeklyaudit && launchctl bootout gui/501 /Users/marcussmith/Library/LaunchAgents/com.local.weeklyaudit.plist || true[0m
+[0;34m[2025-05-05T12:16:38] [INFO] ▶ launchctl list com.local.weeklyaudit && launchctl bootout gui/501 /Users/marcussmith/Library/LaunchAgents/com.local.weeklyaudit.plist || true[0m
 {
 	"LimitLoadToSessionType" = "Aqua";
 	"Label" = "com.local.weeklyaudit";
@@ -117,10 +126,10 @@ success [K[?25h[?2026l
 		"$HOME/Scripts/weeklyAudit.sh";
 	);
 };
-[0;34m[2025-05-05T04:20:12] [INFO] Bootstrapped weekly audit agent ✔[0m
-[0;34m[2025-05-05T04:20:12] [INFO] Configuring passwordless sudo for networksetup…[0m
-[0;34m[2025-05-05T04:20:12] [INFO] Checking: sudo -n true 2>/dev/null[0m
-[0;34m[2025-05-05T04:20:13] [INFO] (Prompting for sudo password to cache it for this script run)[0m
-[0;34m[2025-05-05T04:20:26] [INFO] → Passwordless sudo rule already exists in /etc/sudoers.d/nextlevel-network[0m
-[0;34m[2025-05-05T04:20:26] [INFO] Detecting active network service…[0m
+[0;34m[2025-05-05T12:16:38] [INFO] Bootstrapped weekly audit agent ✔[0m
+[0;34m[2025-05-05T12:16:38] [INFO] Configuring passwordless sudo for networksetup…[0m
+[0;34m[2025-05-05T12:16:38] [INFO] Checking: sudo -n true 2>/dev/null[0m
+[0;34m[2025-05-05T12:16:38] [INFO] (Prompting for sudo password to cache it for this script run)[0m
+[0;34m[2025-05-05T12:16:49] [INFO] → Passwordless sudo rule already exists in /etc/sudoers.d/nextlevel-network[0m
+[0;34m[2025-05-05T12:16:49] [INFO] Detecting active network service…[0m
 ./nextLevel3.sh:532: PRIMARY_SERVICE_ID: parameter not set

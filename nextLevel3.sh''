@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 ###############################################################################
-# nextLevel.sh v2.9 – One-shot “genius-level” setup for M2 Pro Mac
+# nextLevel.sh v2.10 – One-shot “genius-level” setup for M2 Pro Mac
 # Combined Pi-hole + Cloudflared DoH + Automated Checks
 # Fully automated, DRY-RUN / VERBOSE flags, active service detection, robust error handling.
 # FINAL: Using launchctl remove/load -w for ALL LaunchAgents for maximum robustness.
@@ -8,7 +8,7 @@
 # FIX: Use source /dev/stdin for brew shellenv evaluation.
 # FIX: Use launchctl remove/load -w for all user LaunchAgents.
 # FIX: Corrected ALL Zsh syntax (fi -> fi) and plist DTD URL.
-# FIX: Detect and set DNS on the *currently active* network service.
+# FIX: Use networksetup -getcurrentnetworkservice for active service detection.
 ###############################################################################
 set -eEuo pipefail
 trap 'on_error $LINENO $?' ERR
@@ -282,7 +282,7 @@ on_error() {
 
 ### === Section 0: Script Init & Prereqs ===
 CURRENT_SECTION="Script Init"
-log INFO "Starting script: $SCRIPT_NAME (v2.9)"
+log INFO "Starting script: $SCRIPT_NAME (v2.10)"
 
 log INFO "Verifying Xcode Command-Line Tools…"
 if ! check "xcode-select -p &>/dev/null"; then # Use check()
@@ -298,7 +298,7 @@ if ! check "command -v brew &>/dev/null" || ! check "brew --version &>/dev/null"
   # Use source /dev/stdin for brew shellenv evaluation to handle its output syntax
   run 'arch -arm64 /bin/zsh -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"' # Corrected /bin/bash to /bin/zsh - use zsh as script is zsh
   # Add brew shellenv to zprofile for future sessions, use $(which brew) for robustness
-  run "echo 'eval \"\$($(which brew) shellenv)\"' >> ~/.zprofile"
+  run "grep -q 'eval \"\$($(which brew) shellenv)\"' ~/.zprofile || echo 'eval \"\$($(which brew) shellenv)\"' >> ~/.zprofile"
 fi
 # Evaluate brew shellenv in the current script for immediate use using source
 # FIX: Use source /dev/stdin for brew shellenv evaluation
@@ -352,13 +352,13 @@ run "grep -qF 'auth\tsufficient\tpam_tid.so' /etc/pam.d/sudo || echo -e 'auth\ts
 ### === Section 5: YubiKey SSH Keygen ===
 CURRENT_SECTION="YubiKey"
 if $enable_yubikey; then # Use lowercase variable name from config
-  log INFO "Attempting to generate YubiKey SSH key…"
-  # Wrapped ssh-keygen in run(), checking exit code manually below run()
-  if check "ssh-keygen -t ed25519-sk -f ~/.ssh/id_ed25519_sk -N '' -O resident 2>/dev/null"; then
-    log INFO "✓ YubiKey SSH key generated"
-  else
-    log WARN "No FIDO2 device found; skipping YubiKey keygen"
-  fi
+  log INFO "Attempting to generate YubiKey SSH key…"
+  # Wrapped ssh-keygen in run(), checking exit code manually below run()
+  if check "ssh-keygen -t ed25519-sk -f ~/.ssh/id_ed25519_sk -N '' -O resident 2>/dev/null"; then
+    log INFO "✓ YubiKey SSH key generated"
+  else
+    log WARN "No FIDO2 device found; skipping YubiKey keygen"
+  fi
 fi
 
 ### === Section 6: LaunchAgents (Battery & Audit) ===
@@ -382,10 +382,10 @@ cat > ~/Library/LaunchAgents/com.local.battAlert.plist <<'EOF_PLIST' # Corrected
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>com.local.battalert</string>
-  <key>ProgramArguments</key><array><string>$HOME/Scripts/battAlert.sh</string></array>
-  <key>StartInterval</key><integer>1800</integer>
-  <key>RunAtLoad</key><true/>
+  <key>Label</key><string>com.local.battalert</string>
+  <key>ProgramArguments</key><array><string>$HOME/Scripts/battAlert.sh</string></array>
+  <key>StartInterval</key><integer>1800</integer>
+  <key>RunAtLoad</key><true/>
 </dict></plist>
 EOF_PLIST
 fi
@@ -401,10 +401,10 @@ if ! $DRYRUN; then
 cat > ~/Scripts/weeklyAudit.sh <<'EOF_SCRIPT'
 #!/usr/bin/env zsh
 if [[ -x "$HOME/Tools/macDeepDive.sh" ]]; then
-  "$HOME/Tools/macDeepDive.sh" > "$HOME/AuditLogs/$(date +%F_%H-%M).txt"
+  "$HOME/Tools/macDeepDive.sh" > "$HOME/AuditLogs/$(date +%F_%H-%M).txt"
 else
-  echo "Error: macDeepDive.sh missing" >&2
-  exit 1
+  echo "Error: macDeepDive.sh missing" >&2
+  exit 1
 fi
 cd "$HOME/AuditLogs"
 [[ ! -d .git ]] && git init
@@ -419,11 +419,11 @@ cat > ~/Library/LaunchAgents/com.local.weeklyaudit.plist <<'EOF_PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"> # Corrected URL here
 <plist version="1.0"><dict>
-  <key>Label</key><string>com.local.weeklyaudit</string>
-  <key>ProgramArguments</key><array><string>$HOME/Scripts/weeklyAudit.sh</string></array>
-  <key>StartCalendarInterval</key>
-    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer></dict>
-  <key>RunAtLoad</key><true/>
+  <key>Label</key><string>com.local.weeklyaudit</string>
+  <key>ProgramArguments</key><array><string>$HOME/Scripts/weeklyAudit.sh</string></array>
+  <key>StartCalendarInterval</key>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer></dict>
+  <key>RunAtLoad</key><true/>
 </dict></plist>
 EOF_PLIST
 fi
@@ -436,10 +436,10 @@ run "launchctl load -w $HOME/Library/LaunchAgents/com.local.weeklyaudit.plist" #
 ### === Section 7: Local AI Lab (Ollama) === # <-- Renumbered from 6
 CURRENT_SECTION="Ollama Setup"
 if $install_ollama; then # Use lowercase variable name
-  log INFO "Installing Ollama & pulling Mistral model…"
-  run "brew install ollama"
-  run "brew services start ollama || true"
-  run "ollama pull mistral:7b || true"
+  log INFO "Installing Ollama & pulling Mistral model…"
+  run "brew install ollama"
+  run "brew services start ollama || true"
+  run "ollama pull mistral:7b || true"
 fi
 
 ### === Section 8: Advanced Networking (DoH + Pi-hole) === # <-- Renumbered from 7
@@ -450,149 +450,132 @@ log INFO "Configuring passwordless sudo for networksetup…"
 # Check if passwordless sudo is configured before running sudo -v,
 # to avoid unnecessary password prompt if already configured.
 if ! check "sudo -n true 2>/dev/null"; then # Use check()
-  log INFO "(Prompting for sudo password to cache it for this script run)"
-  sudo -v # This will prompt for password if needed and cache it
+  log INFO "(Prompting for sudo password to cache it for this script run)"
+  sudo -v # This will prompt for password if needed and cache it
 fi
 SUDOERS="/etc/sudoers.d/nextlevel-network"
 # Check if the rule *exactly* matches before attempting to write
 if ! sudo grep -qF "$USER ALL=(root) NOPASSWD: /usr/sbin/networksetup -setdnsservers *" $SUDOERS 2>/dev/null; then
-  log INFO "Configuring passwordless sudo rule in $SUDOERS…"
-  sudo mkdir -p /etc/sudoers.d
-  sudo chmod 0755 /etc/sudoers.d
-  sudo tee $SUDOERS >/dev/null <<EOF_SUDO
+  log INFO "Configuring passwordless sudo rule in $SUDOERS…"
+  sudo mkdir -p /etc/sudoers.d
+  sudo chmod 0755 /etc/sudoers.d
+  sudo tee $SUDOERS >/dev/null <<EOF_SUDO
 # Allow user '$USER' to run networksetup without password
 $USER ALL=(root) NOPASSWD: /usr/sbin/networksetup -setdnsservers *
 EOF_SUDO
-  sudo chmod 440 $SUDOERS
-  log INFO "✓ Passwordless sudo rule created"
+  sudo chmod 440 $SUDOERS
+  log INFO "✓ Passwordless sudo rule created"
 else
-  log INFO "→ Passwordless sudo rule already exists in $SUDOERS"
+  log INFO "→ Passwordless sudo rule already exists in $SUDOERS"
 fi
 
-# 2) Detect currently active service via scutil
+# 2) Detect currently active service via networksetup -getcurrentnetworkservice
 log INFO "Detecting active network service…"
-# Use scutil to find the PrimaryService, then map it to a networksetup service name
-PRIMARY_SERVICE_ID=$(scutil <<< $'open\nshow State:/Network/Global/IPv4\nd.show' 2>/dev/null |
-  awk -F': ' '/PrimaryService/ {gsub(/"/,""); print $2}')
+# FIX: Use the simpler and more reliable command
+PRIMARY_SERVICE=$(networksetup -getcurrentnetworkservice)
 
-if [[ -n "$PRIMARY_SERVICE_ID" ]]; then
-  # Map the PrimaryService ID to a networksetup service name
-  # Handle cases where the device name might be like 'en0, en1'
-  PRIMARY_SERVICE=$(networksetup -listnetworkserviceorder |
-    awk -v ps_id="$PRIMARY_SERVICE_ID" '
-      # Look for the line containing the Service ID (Device: ...)
-      /Device:.*'$PRIMARY_SERVICE_ID'(,|\s|$)/ {
-        # The service name is on the line above this one
-        # Clean the name (remove number, parens, whitespace)
-        gsub(/^\([0-9]+\)\s*/, "", prev_line); gsub(/^\s+|\s+$/,"", prev_line);
-        print prev_line; exit
-      }
-      { prev_line = $0 } # Store the current line for the *next* iteration
-    ' ) # head -n 1 is not needed with this logic
-fi
-
-if [[ -z "$PRIMARY_SERVICE" ]]; then # Check if mapping failed
-  log ERROR "Could not detect active service name for ID '$PRIMARY_SERVICE_ID'; skipping Advanced Networking setup"
-  INSTALL_PIHOLE=false INSTALL_DOH=false # Disable installation
+# networksetup -getcurrentnetworkservice might return error messages if no service is active
+if [[ "$PRIMARY_SERVICE" == *"Could not find"* || "$PRIMARY_SERVICE" == *"not recognized"* || -z "$PRIMARY_SERVICE" ]]; then
+  log ERROR "Could not detect active service; skipping Advanced Networking setup"; INSTALL_PIHOLE=false; INSTALL_DOH=false
 else
-  log INFO "Active service: '$PRIMARY_SERVICE'" # Quote the service name in log
+  log INFO "Active service: '$PRIMARY_SERVICE'" # Quote the service name in log
 fi
 
 
 # 3) Get Colima VM IP
 VM_IP=$(check "colima status --json | jq -r '.ip_address'")
 if [[ -z "$VM_IP" || "$VM_IP" == "null" ]]; then
-  log ERROR "No Colima VM IP; skipping Pi-hole/DoH"
-  INSTALL_PIHOLE=false INSTALL_DOH=false
+  log ERROR "No Colima VM IP; skipping Pi-hole/DoH"
+  INSTALL_PIHOLE=false INSTALL_DOH=false
 else
-  log INFO "Colima VM IP: $VM_IP"
-  run "sleep 3" # Give Colima a moment to ensure networking is fully stable
+  log INFO "Colima VM IP: $VM_IP"
+  run "sleep 3" # Give Colima a moment to ensure networking is fully stable
 fi
 
 # Check if either Pihole or DoH is still enabled after checks
 if ! $install_pihole && ! $install_doh; then # Use lowercase config variables
-  log INFO "Skipping Pi-hole and DoH deployment due to earlier checks."
-  # Skip the rest of Section 8
+  log INFO "Skipping Pi-hole and DoH deployment due to earlier checks."
+  # Skip the rest of Section 8
 else # At least one is still enabled
-  log INFO "Proceeding with DNS setup." # Log that we are proceeding
+  log INFO "Proceeding with DNS setup." # Log that we are proceeding
 fi
 
 
 # 4) Deploy Cloudflared DoH (if enabled and VM_IP available)
 if $install_doh; then # Use lowercase variable
-  log INFO "Deploying Cloudflared DoH on $VM_IP:5053…"
-  # cloudflared is installed in Section 1
-  if ! $DRYRUN; then
-  cat > ~/Library/LaunchAgents/com.local.doh.plist <<'EOF_PLIST'
+  log INFO "Deploying Cloudflared DoH on $VM_IP:5053…"
+  # cloudflared is installed in Section 1
+  if ! $DRYRUN; then
+  cat > ~/Library/LaunchAgents/com.local.doh.plist <<'EOF_PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.local.doh</string>
-  <key>ProgramArguments</key>
-    <array>
-      <string>$(which cloudflared)</string>
-      <string>proxy-dns</string>
-      <string>--address</string><string>${VM_IP}</string> # Make it listen on VM IP
-      <string>--port</string><string>5053</string>       # On the host
-      <string>--upstream</string><string>https://1.1.1.1/dns-query</string>
-    </array>
-  <key>KeepAlive</key><true/>
-  <key>RunAtLoad</key><true/>
+  <key>Label</key><string>com.local.doh</string>
+  <key>ProgramArguments</key>
+    <array>
+      <string>$(which cloudflared)</string>
+      <string>proxy-dns</string>
+      <string>--address</string><string>${VM_IP}</string> # Make it listen on VM IP
+      <string>--port</string><string>5053</string>       # On the host
+      <string>--upstream</string><string>https://1.1.1.1/dns-query</string>
+    </array>
+  <key>KeepAlive</key><true/>
+  <key>RunAtLoad</key><true/>
 </dict></plist>
 EOF_PLIST
-  fi
-  # Use the more robust remove/load -w sequence
-  log INFO "Loading agent com.local.doh…"
-  run "launchctl remove com.local.doh 2>/dev/null || true" # Remove by label
-  run "launchctl load -w $HOME/Library/LaunchAgents/com.local.doh.plist" # Load by plist path
+  fi
+  # Use the more robust remove/load -w sequence
+  log INFO "Loading agent com.local.doh…"
+  run "launchctl remove com.local.doh 2>/dev/null || true" # Remove by label
+  run "launchctl load -w $HOME/Library/LaunchAgents/com.local.doh.plist" # Load by plist path
 
  fi
 
 # 5) Deploy Pi-hole, binding DNS to VM_IP and web UI to localhost
 if $install_pihole; then # Use lowercase variable
-  log INFO "Deploying Pi-hole container…"
+  log INFO "Deploying Pi-hole container…"
 
-  # Remove any existing pihole container
-  run "docker rm -f pihole || true"
+  # Remove any existing pihole container
+  run "docker rm -f pihole || true"
 
-  # Deploy Pi-hole, binding port 53 to the VM's IP address, port 80 to host localhost
-  # This bypasses internal VM conflicts (like systemd-resolved)
-  # Pre-configure Pi-hole upstream to the Cloudflared proxy via env var
-  log INFO "Running docker container 'pihole' binding to ${VM_IP}:53 and 127.0.0.1:80"
-  run "docker run -d --name pihole \
-    -p $VM_IP:53:53/tcp -p $VM_IP:53:53/udp \
-    -p 127.0.0.1:80:80 \
-    --restart unless-stopped \
-    -v pihole_data:/etc/pihole \
-    -e TZ=$(date +%Z) \
-    -e WEBPASSWORD='set_me' \
-    -e DNS1=$VM_IP#5053 \
-    pihole/pihole:latest"
+  # Deploy Pi-hole, binding port 53 to the VM's IP address, port 80 to host localhost
+  # This bypasses internal VM conflicts (like systemd-resolved)
+  # Pre-configure Pi-hole upstream to the Cloudflared proxy via env var
+  log INFO "Running docker container 'pihole' binding to ${VM_IP}:53 and 127.0.0.1:80"
+  run "docker run -d --name pihole \
+    -p $VM_IP:53:53/tcp -p $VM_IP:53:53/udp \
+    -p 127.0.0.1:80:80 \
+    --restart unless-stopped \
+    -v pihole_data:/etc/pihole \
+    -e TZ=$(date +%Z) \
+    -e WEBPASSWORD='set_me' \
+    -e DNS1=$VM_IP#5053 \
+    pihole/pihole:latest"
 
-  log INFO "✓ Pi-hole bound to ${VM_IP}:53 with DoH upstream"
+  log INFO "✓ Pi-hole bound to ${VM_IP}:53 with DoH upstream"
 
-  # --- Important Manual Step 1: Verify Pi-hole Setup & Password ---
-  # This step is pre-configured by the DNS1 env var above, but manual check/change is good
-  log INFO "Please VERIFY Pi-hole setup and CHANGE DEFAULT PASSWORD:"
-  log INFO "1. Access Pi-hole web UI at http://127.0.0.1/admin" # Use 127.0.0.1 because port 80 is mapped there
-  log INFO "2. Log in (default password is 'set_me', CHANGE THIS IMMEDIATELY!)"
-  log INFO "3. Go to Settings -> DNS. Verify 'Custom 1 (IPv4)' is ${VM_IP}#5053 and checked."
+  # --- Important Manual Step 1: Verify Pi-hole Setup & Password ---
+  # This step is pre-configured by the DNS1 env var above, but manual check/change is good
+  log INFO "Please VERIFY Pi-hole setup and CHANGE DEFAULT PASSWORD:"
+  log INFO "1. Access Pi-hole web UI at http://127.0.0.1/admin" # Use 127.0.0.1 because port 80 is mapped there
+  log INFO "2. Log in (default password is 'set_me', CHANGE THIS IMMEDIATELY!)"
+  log INFO "3. Go to Settings -> DNS. Verify 'Custom 1 (IPv4)' is ${VM_IP}#5053 and checked."
 
 
-  # Set macOS DNS to point to Pi-hole (automated via passwordless sudo)
-  log INFO "Updating macOS DNS to Pi-hole at $VM_IP for service '$PRIMARY_SERVICE'…"
-  run "sudo networksetup -setdnsservers \"$PRIMARY_SERVICE\" $VM_IP"
-  # Flush DNS caches to make the change take effect immediately
-  run "dscacheutil -flushcache && sudo killall -HUP mDNSResponder || true"
-  log INFO "✓ macOS DNS set to Pi-hole ($VM_IP) and caches flushed."
+  # Set macOS DNS to point to Pi-hole (automated via passwordless sudo)
+  log INFO "Updating macOS DNS to Pi-hole at $VM_IP for service '$PRIMARY_SERVICE'…"
+  run "sudo networksetup -setdnsservers \"$PRIMARY_SERVICE\" $VM_IP"
+  # Flush DNS caches to make the change take effect immediately
+  run "dscacheutil -flushcache && sudo killall -HUP mDNSResponder || true"
+  log INFO "✓ macOS DNS set to Pi-hole ($VM_IP) and caches flushed."
 
  fi
 
 ### === Section 9: Launch NordVPN === # <-- Renumbered from 8
 CURRENT_SECTION="NordVPN Launch"
 if $enable_nord; then # Use lowercase variable
-  log INFO "Launching NordVPN GUI…"; run "open -a NordVPN || true"
+  log INFO "Launching NordVPN GUI…"; run "open -a NordVPN || true"
 fi
 
 ### === Section 10: Prune Logitech ===
@@ -601,8 +584,8 @@ log INFO "Pruning Logitech agents…"
 # These setopt/unsetopt must run directly in the script's shell
 setopt nullglob
 for p in /Library/LaunchAgents/com.logi.*; do
-  run "sudo launchctl bootout system \"$p\" || true" # Use run()
-  run "sudo rm -f \"$p\"" # Use run()
+  run "sudo launchctl bootout system \"$p\" || true" # Use run()
+  run "sudo rm -f \"$p\"" # Use run()
 done
 unsetopt nullglob
 
@@ -612,16 +595,16 @@ log INFO "----- Health Check -----"
 
 # Check 1: ARM-only process
 if check "sysctl -n sysctl.proc_translated &>/dev/null" && (( $(sysctl -n sysctl.proc_translated) == 0 )); then # Check exists first
-  CHECK_ARM="ARM-only process ✔"
+  CHECK_ARM="ARM-only process ✔"
 else
-  CHECK_ARM="Rosetta active ❌"
+  CHECK_ARM="Rosetta active ❌"
 fi
 
 # Check 2: Ollama running (accessible via localhost:11434)
 if check "curl -s --max-time 5 http://localhost:11434/v1/models &>/dev/null" && check "curl -s --max-time 5 http://localhost:11434/v1/models 2>/dev/null | grep -q mistral"; then # Check endpoint is up AND Mistral exists
-  CHECK_OLLAMA="Ollama Mistral running ✔"
+  CHECK_OLLAMA="Ollama Mistral running ✔"
 else
-  CHECK_OLLAMA="Ollama down or no Mistral model ❌"
+  CHECK_OLLAMA="Ollama down or no Mistral model ❌"
 fi
 
 # Check 3: Local DNS filtering configured (pointing to 127.0.0.1 or VM_IP)
@@ -629,32 +612,32 @@ fi
 # Check specifically for the VM IP set by Pi-hole in the scutil --dns output
 # Increased robustness of the grep pattern and checks
 if check "scutil --dns &>/dev/null" && scutil --dns | grep 'nameserver' | grep -qE "(^|\s)${VM_IP}(\s|$)" &>/dev/null; then # Check specifically for VM_IP set by Pi-hole
-  CHECK_DNS="DNS pointing to Pi-hole ($VM_IP) ✔"
+  CHECK_DNS="DNS pointing to Pi-hole ($VM_IP) ✔"
 elif check "scutil --dns &>/dev/null" && scutil --dns | grep 'nameserver' | grep -qE '(^|\s)127\.0\.0\.1(:\d+)?(\s|$)' &>/dev/null; then # Check if it's pointing to localhost (DoH only)
-  CHECK_DNS="DNS pointing to localhost DoH ✔"
+  CHECK_DNS="DNS pointing to localhost DoH ✔"
 else
-  # Fallback if neither specific check passes
-  CHECK_DNS="DNS not local ❌"
+  # Fallback if neither specific check passes
+  CHECK_DNS="DNS not local ❌"
 fi
 
 
 # Check 4: LaunchAgents loaded (check by listing label)
 if check "launchctl list com.local.battalert &>/dev/null"; then
-  CHECK_BATTERY="Agent com.local.battalert loaded ✔"
+  CHECK_BATTERY="Agent com.local.battalert loaded ✔"
 else
-  CHECK_BATTERY="Agent com.local.battalert missing ❌"
+  CHECK_BATTERY="Agent com.local.battalert missing ❌"
 fi
 
 if check "launchctl list com.local.weeklyaudit &>/dev/null"; then
-  CHECK_WEEKLY="Agent com.local.weeklyaudit loaded ✔"
+  CHECK_WEEKLY="Agent com.local.weeklyaudit loaded ✔"
 else
-  CHECK_WEEKLY="Agent com.local.weeklyaudit missing ❌"
+  CHECK_WEEKLY="Agent com.local.weeklyaudit missing ❌"
 fi
 
 if check "launchctl list com.local.doh &>/dev/null"; then
-  CHECK_DOH="Agent com.local.doh loaded ($VM_IP:5053) ✔"
+  CHECK_DOH="Agent com.local.doh loaded ($VM_IP:5053) ✔"
 else
-  CHECK_DOH="Agent com.local.doh missing ❌"
+  CHECK_DOH="Agent com.local.doh missing ❌"
 fi
 
 
@@ -667,9 +650,8 @@ log INFO "$CHECK_BATTERY"
 log INFO "$CHECK_WEEKLY"
 # Only print DoH check result if its installation was attempted
 if $install_doh; then # Use lowercase variable
-  log INFO "$CHECK_DOH"
+  log INFO "$CHECK_DOH"
 fi
 log INFO "--------------------------"
-
 
 log INFO "Setup complete ✔"
