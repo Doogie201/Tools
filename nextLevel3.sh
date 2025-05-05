@@ -1,4 +1,5 @@
 #!/usr/bin/env zsh
+# shellcheck disable=SC1091,SC2034,SC2086,SC2154,SC2155,SC2016
 ###############################################################################
 # nextLevel.sh v2.9 – One-shot “genius-level” setup for M2 Pro Mac
 # Combined Pi-hole + Cloudflared DoH + Automated Checks
